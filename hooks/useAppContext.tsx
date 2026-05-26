@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo, useEffect } from 'react';
 import { User, VC, UserRole, VCStatus, NewVCData, EmergencyVCData, Attendance, AttendanceStatus, AttendanceChangeRequest, AttendanceChangeRequestStatus, UserStatus, SalaryVoucher, SalaryStatus, Message, MessageAttachment } from '../types';
 import { USERS, INITIAL_VCS, INITIAL_ATTENDANCE, INITIAL_ATTENDANCE_CHANGE_REQUESTS, INITIAL_MESSAGES, GLOBAL_CHAT_ID } from '../constants';
+import { playVcReminderTune } from '../utils/audio';
 
 interface AppContextType {
   currentUser: User | null;
@@ -33,7 +34,7 @@ interface AppContextType {
   updateVCLocations: (vcId: string, locations: string[]) => void;
   updateVCDetails: (vcId: string, updates: Partial<VC>) => void;
   reportTechnicalIssue: (vcId: string, description: string | null) => void; // New method
-  updateUserReminderSettings: (userId: string, settings: { remindersEnabled: boolean; reminderMinutes: number }) => void;
+  updateUserReminderSettings: (userId: string, settings: { remindersEnabled: boolean; reminderMinutes: number; vcReminderTune?: string; technicalIssueTune?: string }) => void;
   cancelVC: (vcId: string) => void;
   markInTime: (conductorId: string) => void;
   markOutTime: (conductorId: string) => void;
@@ -296,7 +297,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }));
   }, []);
 
-  const updateUserReminderSettings = useCallback((userId: string, settings: { remindersEnabled: boolean; reminderMinutes: number }) => {
+  const updateUserReminderSettings = useCallback((userId: string, settings: { remindersEnabled: boolean; reminderMinutes: number; vcReminderTune?: string; technicalIssueTune?: string }) => {
     const updateUser = (user: User | null) => {
       if (!user) return null;
       return { ...user, ...settings };
@@ -650,6 +651,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         if (delay > 0) {
             const timerId = window.setTimeout(() => {
+                playVcReminderTune(currentUser?.vcReminderTune ?? 'crystal');
                 alert(`Reminder: Your VC "${vc.subject}" is starting in ${currentUser.reminderMinutes} minutes.`);
             }, delay);
             timerIds.push(timerId);

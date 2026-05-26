@@ -2,6 +2,10 @@
   "name": "Copy of Final of CIL VC Connect",
   "description": "A modern, easy-to-use mobile-first application for managing and conducting Video Conferences (VCs) for Coal India Limited. It provides tailored dashboards for Managers, Reporting Authorities, and VC Conductors to streamline the scheduling, execution, and reporting of VCs.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
 }

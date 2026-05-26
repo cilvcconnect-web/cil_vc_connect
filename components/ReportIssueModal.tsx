@@ -4,6 +4,7 @@ import Modal from './common/Modal';
 import Button from './common/Button';
 import { VC } from '../types';
 import { useAppContext } from '../hooks/useAppContext';
+import { playTechnicalIssueTune } from '../utils/audio';
 
 interface ReportIssueModalProps {
   vc: VC | null;
@@ -11,7 +12,7 @@ interface ReportIssueModalProps {
 }
 
 const ReportIssueModal: React.FC<ReportIssueModalProps> = ({ vc, onClose }) => {
-  const { reportTechnicalIssue } = useAppContext();
+  const { reportTechnicalIssue, currentUser } = useAppContext();
   const [description, setDescription] = useState('');
   const [selectedPreset, setSelectedPreset] = useState('');
 
@@ -25,6 +26,10 @@ const ReportIssueModal: React.FC<ReportIssueModalProps> = ({ vc, onClose }) => {
           return;
       }
       reportTechnicalIssue(vc.id, finalDescription);
+      
+      // Play matching user's selected technical issue tune
+      playTechnicalIssueTune(currentUser?.technicalIssueTune ?? 'siren');
+      
       onClose();
       setDescription('');
       setSelectedPreset('');

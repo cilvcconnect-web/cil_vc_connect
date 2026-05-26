@@ -22,6 +22,8 @@ export interface User {
   profilePhoto?: string;
   remindersEnabled?: boolean;
   reminderMinutes?: number;
+  vcReminderTune?: string;
+  technicalIssueTune?: string;
   status: UserStatus;
   deletionRequested?: boolean;
 }
