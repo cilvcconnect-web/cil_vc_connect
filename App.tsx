@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Analytics } from '@vercel/analytics/react';
 import { useAppContext } from './hooks/useAppContext';
 import LoginScreen from './components/LoginScreen';
 import Dashboard from './components/Dashboard';
@@ -33,6 +34,7 @@ const App: React.FC = () => {
           )}
         </Routes>
       </div>
+      <Analytics />
     </HashRouter>
   );
 };
