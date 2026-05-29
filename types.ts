@@ -26,6 +26,11 @@ export interface User {
   technicalIssueTune?: string;
   status: UserStatus;
   deletionRequested?: boolean;
+  bankAccountNo?: string;
+  bankName?: string;
+  bankIfscCode?: string;
+  pfNumber?: string;
+  esicNumber?: string;
 }
 
 export enum VCStatus {
@@ -116,6 +121,8 @@ export interface SalaryVoucher {
   amountInWords: string;
   description: string;
   status: SalaryStatus;
+  pfNumber?: string;
+  esicNumber?: string;
   checkedByRaId?: string;
   checkedDate?: string;
   passedByManagerId?: string;
@@ -142,3 +149,25 @@ export interface Message {
 
 export type NewVCData = Omit<VC, 'id' | 'status' | 'createdAt'>;
 export type EmergencyVCData = Omit<VC, 'id' | 'status' | 'createdAt'>;
+
+export enum RosterRequestStatus {
+  Pending = 'Pending',
+  Approved = 'Approved',
+  Rejected = 'Rejected',
+}
+
+export interface Roster {
+  id: string;
+  conductorId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  createdAt: string;
+  changeRequested?: boolean;
+  requestedDate?: string;
+  requestedStartTime?: string;
+  requestedEndTime?: string;
+  changeReason?: string;
+  changeRequestStatus?: RosterRequestStatus;
+}
+

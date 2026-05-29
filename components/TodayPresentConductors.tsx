@@ -52,7 +52,7 @@ const TodayPresentConductors: React.FC = () => {
             {presentConductors.length > 0 ? (
                 <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
                     {presentConductors.map(conductor => (
-                        <div key={conductor.conductorId} className="bg-slate-700 p-3 rounded-lg">
+                        <div key={`${conductor.conductorId}-${conductor.date}`} className="bg-slate-700 p-3 rounded-lg">
                             <div className="flex items-center gap-3">
                                 <div className="h-8 w-8 rounded-full overflow-hidden bg-slate-600 flex-shrink-0 flex items-center justify-center">
                                     {conductor.profilePhoto ? (

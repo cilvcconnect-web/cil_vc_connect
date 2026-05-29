@@ -4,6 +4,7 @@ import Modal from './common/Modal';
 import Button from './common/Button';
 import { VC, User } from '../types';
 import { useAppContext } from '../hooks/useAppContext';
+import GlowingIP from './common/GlowingIP';
 
 interface VCDetailsModalProps {
   vc: VC | null;
@@ -76,7 +77,16 @@ const VCDetailsModal: React.FC<VCDetailsModalProps> = ({ vc, onClose }) => {
             <DetailItem label="Room Name" value={vc.roomName} />
             <DetailItem label="Building" value={vc.buildingType} />
         </div>
-        <DetailItem label="Room IP" value={vc.roomIp} />
+        <div className="py-2">
+            <p className="text-sm text-gray-400">Room IP</p>
+            {vc.roomIp ? (
+                <div className="mt-1">
+                    <GlowingIP ip={vc.roomIp} />
+                </div>
+            ) : (
+                <p className="font-semibold text-gray-900 dark:text-white">N/A</p>
+            )}
+        </div>
         <DetailItem label="Scheduled Start Time" value={formatDate(vc.startTime)} />
         <DetailItem label="Actual Start Time" value={formatDate(vc.actualStartTime)} />
         <DetailItem label="Actual End Time" value={formatDate(vc.actualEndTime)} />

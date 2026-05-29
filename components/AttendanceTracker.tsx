@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useAppContext } from '../hooks/useAppContext';
-import { AttendanceStatus, Attendance } from '../types';
+import { AttendanceStatus, Attendance, UserRole } from '../types';
 import Card from './common/Card';
 import Button from './common/Button';
 import Modal from './common/Modal';
@@ -54,15 +54,13 @@ interface AutoLog {
 }
 
 const AttendanceTracker: React.FC<AttendanceTrackerProps> = ({ conductorId }) => {
-  const { attendance, markInTime, markOutTime, markOnLeave } = useAppContext();
+  const { attendance, markInTime, markOutTime, markOnLeave, isAutopilotEnabled, setAutopilotEnabled, currentUser } = useAppContext();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedRecord, setSelectedRecord] = useState<Attendance | null>(null);
   const [isChangeRequestModalOpen, setIsChangeRequestModalOpen] = useState(false);
 
-  // Auto Attendance Geofence states
-  const [isAutoAttendanceEnabled, setIsAutoAttendanceEnabled] = useState<boolean>(() => {
-    return localStorage.getItem(`cil_auto_attendance_enabled_${conductorId}`) === 'true';
-  });
+  // Auto Attendance Geofence states mapped to global Autopilot setting
+  const isAutoAttendanceEnabled = isAutopilotEnabled;
 
   const [simulatedLocation, setSimulatedLocation] = useState<'hq' | 'parking' | 'outside' | 'away' | 'gps'>(() => {
     return (localStorage.getItem(`cil_auto_attendance_sim_${conductorId}`) as any) || 'hq';
@@ -79,9 +77,7 @@ const AttendanceTracker: React.FC<AttendanceTrackerProps> = ({ conductorId }) =>
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  useEffect(() => {
-    localStorage.setItem(`cil_auto_attendance_enabled_${conductorId}`, String(isAutoAttendanceEnabled));
-  }, [isAutoAttendanceEnabled, conductorId]);
+  // (Removed local isAutoAttendanceEnabled persistence hook, handled globally now)
 
   useEffect(() => {
     localStorage.setItem(`cil_auto_attendance_sim_${conductorId}`, simulatedLocation);
@@ -385,27 +381,37 @@ const AttendanceTracker: React.FC<AttendanceTrackerProps> = ({ conductorId }) =>
               </div>
             </div>
             
-            <div className="flex items-center gap-2">
-              <label className="text-[10px] font-black text-slate-300 tracking-widest uppercase mr-1">
-                {isAutoAttendanceEnabled ? 'Autopilot Active' : 'Autopilot Inactive'}
-              </label>
-              <button
-                onClick={() => {
-                  const nextState = !isAutoAttendanceEnabled;
-                  setIsAutoAttendanceEnabled(nextState);
-                  addAutopilotToggleLog(nextState);
-                }}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-300 focus:outline-none ${
-                  isAutoAttendanceEnabled ? 'bg-cyan-500' : 'bg-slate-700'
-                }`}
-                title="Toggle Geofenced Auto-Attendance"
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
-                    isAutoAttendanceEnabled ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
+            <div className="flex flex-col items-end gap-1">
+              <div className="flex items-center gap-2">
+                <label className="text-[10px] font-black text-slate-300 tracking-widest uppercase mr-1">
+                  {isAutoAttendanceEnabled ? 'Autopilot Active' : 'Autopilot Inactive'}
+                </label>
+                <button
+                  disabled={currentUser?.role !== UserRole.ReportingAuthority}
+                  onClick={() => {
+                    if (currentUser?.role === UserRole.ReportingAuthority) {
+                      const nextState = !isAutoAttendanceEnabled;
+                      setAutopilotEnabled(nextState);
+                      addAutopilotToggleLog(nextState);
+                    }
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-300 focus:outline-none ${
+                    isAutoAttendanceEnabled ? 'bg-cyan-500' : 'bg-slate-700'
+                  } ${currentUser?.role !== UserRole.ReportingAuthority ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  title={currentUser?.role === UserRole.ReportingAuthority ? "Toggle Geofenced Auto-Attendance" : "Toggling is restricted to Reporting Authority only"}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
+                      isAutoAttendanceEnabled ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              {currentUser?.role !== UserRole.ReportingAuthority && (
+                <span className="text-[8px] text-amber-500 font-bold uppercase tracking-wider block text-right">
+                  🔒 Managed by Reporting Authority
+                </span>
+              )}
             </div>
           </div>
 
@@ -638,16 +644,21 @@ const AttendanceTracker: React.FC<AttendanceTrackerProps> = ({ conductorId }) =>
                         </p>
                       </div>
                       
-                      {!todaysAttendance.outTime && !isAutoAttendanceEnabled && (
-                        <Button onClick={() => markOutTime(conductorId)} className="mt-2 w-full !py-1 text-xs font-bold uppercase tracking-wider">
-                          Manual Out Time
-                        </Button>
-                      )}
-
-                      {!todaysAttendance.outTime && isAutoAttendanceEnabled && (
-                        <p className="text-[8px] text-yellow-400 uppercase font-bold tracking-widest mt-2 leading-tight">
-                          Autopilot will mark Out-Time if you exit CIL HQ radius (&gt;300m)
-                        </p>
+                      {!todaysAttendance.outTime && (
+                        <div className="w-full">
+                          <Button 
+                            onClick={() => markOutTime(conductorId)} 
+                            disabled={isAutopilotEnabled}
+                            className="mt-2 w-full !py-1 text-xs font-bold uppercase tracking-wider"
+                          >
+                            Manual Out Time
+                          </Button>
+                          {isAutopilotEnabled && (
+                            <p className="text-[8px] text-yellow-400 uppercase font-bold tracking-widest mt-2 leading-tight">
+                              Autopilot is ON. Out-Time will be filed automatically when exceeding CIL HQ radius (&gt;300m)
+                            </p>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -655,29 +666,44 @@ const AttendanceTracker: React.FC<AttendanceTrackerProps> = ({ conductorId }) =>
 
                 {todaysAttendance.status === AttendanceStatus.OnLeave && (
                   <div className="bg-yellow-500/10 p-4 rounded-xl border border-yellow-500/20">
-                    <p className="text-[10px] text-yellow-400 uppercase font-bold tracking-widest mb-1 flex items-center gap-1.5 animate-pulse">
-                      <Clock className="w-3.5 h-3.5" />
-                      Day Off Marked
-                    </p>
-                    <p className="text-xs text-yellow-100 font-semibold leading-relaxed">
-                      You are marked as "On Leave" for today. Automatic location triggers and manual clockings are closed. Please request an Attendance correction if you need to reverse this.
-                    </p>
+                     <p className="text-[10px] text-yellow-400 uppercase font-bold tracking-widest mb-1 flex items-center gap-1.5 animate-pulse">
+                       <Clock className="w-3.5 h-3.5" />
+                       Day Off Marked
+                     </p>
+                     <p className="text-xs text-yellow-100 font-semibold leading-relaxed">
+                       You are marked as "On Leave" for today. Automatic location triggers and manual clockings are closed. Please request an Attendance correction if you need to reverse this.
+                     </p>
                   </div>
                 )}
               </div>
             ) : (
               <div>
                 <p className="text-xs text-slate-400 font-semibold mb-4 leading-relaxed">
-                  No active attendance is filed for today. You can toggle Autopilot on and enter the simulated CIL HQ to register automatically, or file manual timestamps below.
+                  No active attendance is filed for today. When Autopilot is on, entering the simulated CIL HQ HQ zone registers presence automatically.
                 </p>
                 <div className="flex gap-3">
-                  <Button variant="success" onClick={() => markInTime(conductorId)} className="flex-1 !py-2.5 font-bold uppercase text-xs tracking-widest">
+                  <Button 
+                    variant="success" 
+                    onClick={() => markInTime(conductorId)} 
+                    disabled={isAutopilotEnabled}
+                    className="flex-1 !py-2.5 font-bold uppercase text-xs tracking-widest"
+                  >
                     Manual In Time
                   </Button>
-                  <Button variant="secondary" onClick={() => markOnLeave(conductorId)} className="flex-1 !py-2.5 font-bold uppercase text-xs tracking-widest">
+                  <Button 
+                    variant="secondary" 
+                    onClick={() => markOnLeave(conductorId)} 
+                    disabled={isAutopilotEnabled}
+                    className="flex-1 !py-2.5 font-bold uppercase text-xs tracking-widest"
+                  >
                     Mark On Leave
                   </Button>
                 </div>
+                {isAutopilotEnabled && (
+                  <p className="text-[9px] text-amber-500 font-bold uppercase tracking-wider text-center mt-3 animate-pulse">
+                    ⚠️ Autopilot Attendance is ON. Manual input options are deactivated.
+                  </p>
+                )}
               </div>
             )}
           </div>

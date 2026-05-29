@@ -72,6 +72,18 @@ const Dashboard: React.FC = () => {
         onConfirm={handleConfirmDelete}
         onReject={handleRejectDelete}
       />
+
+      {/* Copyright Watermark */}
+      <footer className="py-6 border-t border-slate-200/50 dark:border-slate-800/10 mt-auto text-center animate-fade-in [animation-delay:200ms]">
+        <div className="container mx-auto px-4 flex flex-col items-center justify-center gap-1.5 select-none">
+          <p className="text-[10px] sm:text-xs font-semibold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
+            © 2026 CIL VC Connect. All Rights Reserved.
+          </p>
+          <p className="text-[10px] sm:text-xs font-semibold tracking-wider text-slate-400/80 dark:text-slate-500/70 uppercase">
+            This Application Made By <span className="text-cyan-600 dark:text-cyan-400 font-bold font-mono">Pritam Das</span> | Contact: <span className="font-mono text-cyan-600 dark:text-cyan-400 font-bold">6296361642</span>
+          </p>
+        </div>
+      </footer>
       
       <style>{`
         @keyframes fadeIn {

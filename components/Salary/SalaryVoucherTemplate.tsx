@@ -123,6 +123,18 @@ const SalaryVoucherTemplate: React.FC<SalaryVoucherTemplateProps> = ({ voucher, 
                             <div className="col-span-2 font-bold">IFSC Code :</div>
                             <div className="col-span-10 border-b border-dotted border-black">{voucher.ifscCode}</div>
                         </div>
+                        {voucher.pfNumber && (
+                          <div className="grid grid-cols-12 gap-2 mb-2">
+                              <div className="col-span-2 font-bold">PF Number :</div>
+                              <div className="col-span-10 border-b border-dotted border-black">{voucher.pfNumber}</div>
+                          </div>
+                        )}
+                        {voucher.esicNumber && (
+                          <div className="grid grid-cols-12 gap-2 mb-2">
+                              <div className="col-span-2 font-bold">ESIC Number :</div>
+                              <div className="col-span-10 border-b border-dotted border-black">{voucher.esicNumber}</div>
+                          </div>
+                        )}
                         <div className="grid grid-cols-12 gap-2 mb-2 mt-4">
                              <div className="col-span-2 font-bold">Description :</div>
                              <div className="col-span-10 italic">{voucher.description}</div>

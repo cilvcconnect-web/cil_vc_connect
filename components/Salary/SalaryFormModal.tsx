@@ -22,11 +22,47 @@ const SalaryFormModal: React.FC<SalaryFormModalProps> = ({ isOpen, onClose }) =>
     amount: 0,
     amountInWords: '',
     accountCode: '',
-    accountNo: '',
-    bankName: '',
-    ifscCode: '',
+    accountNo: currentUser?.bankAccountNo || '',
+    bankName: currentUser?.bankName || '',
+    ifscCode: currentUser?.bankIfscCode || '',
+    pfNumber: currentUser?.pfNumber || '',
+    esicNumber: currentUser?.esicNumber || '',
     description: 'Salary/Reimbursement for...'
   });
+
+  React.useEffect(() => {
+    if (isOpen && currentUser) {
+      setFormData(prev => {
+        const nextPaidTo = currentUser.name || '';
+        const nextAccountNo = currentUser.bankAccountNo || prev.accountNo || '';
+        const nextBankName = currentUser.bankName || prev.bankName || '';
+        const nextIfscCode = currentUser.bankIfscCode || prev.ifscCode || '';
+        const nextPfNumber = currentUser.pfNumber || prev.pfNumber || '';
+        const nextEsicNumber = currentUser.esicNumber || prev.esicNumber || '';
+
+        if (
+          prev.paidTo === nextPaidTo &&
+          prev.accountNo === nextAccountNo &&
+          prev.bankName === nextBankName &&
+          prev.ifscCode === nextIfscCode &&
+          prev.pfNumber === nextPfNumber &&
+          prev.esicNumber === nextEsicNumber
+        ) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          paidTo: nextPaidTo,
+          accountNo: nextAccountNo,
+          bankName: nextBankName,
+          ifscCode: nextIfscCode,
+          pfNumber: nextPfNumber,
+          esicNumber: nextEsicNumber,
+        };
+      });
+    }
+  }, [isOpen, currentUser]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -54,7 +90,9 @@ const SalaryFormModal: React.FC<SalaryFormModalProps> = ({ isOpen, onClose }) =>
             advance: formData.advance!,
             amount: Number(formData.amount),
             amountInWords: formData.amountInWords!,
-            description: formData.description!
+            description: formData.description!,
+            pfNumber: formData.pfNumber,
+            esicNumber: formData.esicNumber,
         });
         onClose();
     }
@@ -101,6 +139,17 @@ const SalaryFormModal: React.FC<SalaryFormModalProps> = ({ isOpen, onClose }) =>
             <div>
                 <label className="block text-sm text-gray-300">IFSC Code</label>
                 <input type="text" name="ifscCode" value={formData.ifscCode} onChange={handleChange} className="w-full p-2 rounded bg-slate-700 border border-slate-600 text-white" required />
+            </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+             <div>
+                <label className="block text-sm text-gray-300">PF Number (Optional)</label>
+                <input type="text" name="pfNumber" value={formData.pfNumber || ''} onChange={handleChange} placeholder="e.g. MH/BAN/12345/678" className="w-full p-2 rounded bg-slate-700 border border-slate-600 text-white" />
+            </div>
+            <div>
+                <label className="block text-sm text-gray-300">ESIC Number (Optional)</label>
+                <input type="text" name="esicNumber" value={formData.esicNumber || ''} onChange={handleChange} placeholder="e.g. 31000123450001201" className="w-full p-2 rounded bg-slate-700 border border-slate-600 text-white" />
             </div>
         </div>
 

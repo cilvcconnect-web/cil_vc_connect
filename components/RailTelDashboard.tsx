@@ -16,6 +16,7 @@ import EditRoomDetailsModal from './EditRoomDetailsModal';
 import { useNavigate } from 'react-router-dom';
 import RoomUsageSection from './RoomUsageSection';
 import { PREDEFINED_ROOMS } from '../constants';
+import GlowingIP from './common/GlowingIP';
 
 const SettingsIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -121,8 +122,8 @@ const RoomCard: React.FC<{ vc: VC, onClick: () => void, isHighlighted?: boolean 
                     )}
                     <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">IP:</span>
-                        <span className="font-mono text-sm bg-gray-200 dark:bg-slate-700 px-2 py-0.5 rounded text-gray-800 dark:text-gray-200">
-                            {vc.roomIp || 'Not Configured'}
+                        <span className="font-mono text-sm bg-gray-200 dark:bg-slate-700 px-2 py-0.5 rounded text-gray-800 dark:text-gray-200 flex items-center gap-1">
+                            {vc.roomIp ? <GlowingIP ip={vc.roomIp} /> : 'Not Configured'}
                         </span>
                     </div>
                 </div>
@@ -156,14 +157,21 @@ const RailTelDashboard: React.FC = () => {
   // Track previous in-progress VCs to trigger notifications
   const prevInProgressIdsRef = useRef<Set<string>>(new Set());
 
-  // RailTel sees all VCs but should primarily monitor technical rooms
+  // RailTel sees all VCs
   const allVCs = useMemo(() => {
-    const predefinedNames = PREDEFINED_ROOMS.map(r => r.name);
     return [...vcs]
-      // Filter out VCs that don't have at least one predefined room (technical locations)
-      .filter(vc => vc.locations.some(loc => predefinedNames.includes(loc)))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [vcs]);
+
+  const activeRailTelVCs = useMemo(() => {
+    return allVCs.filter(vc => vc.status !== VCStatus.Completed && vc.status !== VCStatus.Cancelled);
+  }, [allVCs]);
+
+  const { unassignedVCs, assignedVCs } = useMemo(() => {
+    const unassigned = activeRailTelVCs.filter(vc => !vc.conductorId);
+    const assigned = activeRailTelVCs.filter(vc => !!vc.conductorId);
+    return { unassignedVCs: unassigned, assignedVCs: assigned };
+  }, [activeRailTelVCs]);
   
   // Notification Logic
   useEffect(() => {
@@ -282,51 +290,121 @@ const RailTelDashboard: React.FC = () => {
             </div>
             
             {vcViewMode === 'list' ? (
-                <div className="space-y-4">
-                {allVCs.length > 0 ? allVCs.map(vc => (
-                    <div key={vc.id} className={`bg-white border border-gray-200 dark:border-transparent dark:bg-slate-700 p-4 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors duration-300 ${vc.technicalIssue ? 'ring-2 ring-red-500 bg-red-50 dark:bg-red-900/20' : ''}`}>
-                    <div>
-                        <div className="flex items-center gap-2">
-                             <p className="font-bold text-lg text-gray-900 dark:text-white">{vc.subject}</p>
-                             {vc.technicalIssue && (
-                                 <span className="flex items-center gap-1 bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded animate-pulse">
+                <div className="space-y-6">
+                  {/* Unassigned VCs */}
+                  {unassignedVCs.length > 0 && (
+                     <div className="space-y-3">
+                       <div className="flex items-center gap-2 px-2">
+                         <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                         <h4 className="text-xs font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">
+                           Unassigned Conferences ({unassignedVCs.length}) - Awaiting Conductor Setup
+                         </h4>
+                       </div>
+                       <div className="space-y-4">
+                         {unassignedVCs.map(vc => (
+                           <div key={vc.id} className="bg-amber-50/20 dark:bg-amber-950/10 border border-amber-500/30 dark:border-amber-500/20 p-4 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors duration-300 hover:border-amber-500">
+                             <div>
+                               <div className="flex items-center gap-2">
+                                 <p className="font-bold text-lg text-gray-900 dark:text-white">{vc.subject}</p>
+                                 {vc.technicalIssue && (
+                                   <span className="flex items-center gap-1 bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded animate-pulse">
                                      <AlertIcon /> TECHNICAL ISSUE
+                                   </span>
+                                 )}
+                               </div>
+                               <p className="text-sm text-gray-500 dark:text-gray-400">
+                                 Scheduled: {new Date(vc.startTime).toLocaleString()}
+                               </p>
+                               <div className="flex flex-wrap gap-2 mt-2">
+                                 <ContactSticker label="Manager" userId={vc.managerId} />
+                                 <ContactSticker label="Authority" userId={vc.reportingAuthorityId} />
+                                 <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-200/20">
+                                   Unassigned
                                  </span>
-                             )}
-                        </div>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Scheduled: {new Date(vc.startTime).toLocaleString()}
-                        </p>
-                        <div className="flex flex-wrap gap-2 mt-2">
-                            <ContactSticker label="Manager" userId={vc.managerId} />
-                            <ContactSticker label="Authority" userId={vc.reportingAuthorityId} />
-                            {vc.conductorId ? (
-                                <ContactSticker label="Conductor" userId={vc.conductorId} />
-                            ) : (
-                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-gray-300">
-                                    Unassigned
-                                </span>
-                            )}
-                        </div>
-                        <LocationSticker locations={vc.locations} className="mt-2" hideNonPredefined={true} />
-                        
-                        {vc.technicalIssue && (
-                            <div className="my-2 p-2 bg-red-200 dark:bg-red-800/50 rounded text-sm text-red-800 dark:text-red-100 font-bold border border-red-300 dark:border-red-700">
-                                ISSUE: {vc.technicalIssueDescription}
-                            </div>
-                        )}
+                               </div>
+                               <LocationSticker locations={vc.locations} className="mt-2" hideNonPredefined={true} />
+                               
+                               {vc.technicalIssue && (
+                                 <div className="my-2 p-2 bg-red-200 dark:bg-red-800/50 rounded text-sm text-red-800 dark:text-red-100 font-bold border border-red-300 dark:border-red-700">
+                                   ISSUE: {vc.technicalIssueDescription}
+                                 </div>
+                               )}
 
-                        <div className="flex flex-wrap gap-4 mt-2 items-center">
-                            <p className={`text-sm font-semibold ${getStatusColor(vc.status)}`}>{vc.status}</p>
-                            {vc.roomIp && <span className="text-xs bg-gray-700 text-gray-200 px-2 py-0.5 rounded font-mono">IP: {vc.roomIp}</span>}
-                            {vc.roomName && <span className="text-xs bg-gray-700 text-gray-200 px-2 py-0.5 rounded">Room: {vc.roomName}</span>}
+                               <div className="flex flex-wrap gap-4 mt-2 items-center">
+                                 <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">Needs Assignment ({vc.status})</p>
+                                 {vc.roomIp && (
+                                   <span className="text-xs bg-gray-700 text-gray-200 px-2 py-0.5 rounded font-mono inline-flex items-center gap-1">
+                                     IP: <GlowingIP ip={vc.roomIp} />
+                                   </span>
+                                 )}
+                                 {vc.roomName && <span className="text-xs bg-gray-700 text-gray-200 px-2 py-0.5 rounded">Room: {vc.roomName}</span>}
+                               </div>
+                             </div>
+                             <div className="flex flex-wrap gap-2 self-start md:self-center">
+                               <Button variant="secondary" onClick={() => setSelectedVc(vc)}>Technical Details</Button>
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                     </div>
+                  )}
+
+                  {/* Assigned VCs */}
+                  <div className="space-y-3">
+                    {unassignedVCs.length > 0 && assignedVCs.length > 0 && (
+                       <div className="flex items-center gap-2 px-2 pt-2">
+                         <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                           Assigned Conferences ({assignedVCs.length})
+                         </h4>
+                       </div>
+                    )}
+                    <div className="space-y-4">
+                      {assignedVCs.length > 0 ? assignedVCs.map(vc => (
+                        <div key={vc.id} className={`bg-white border border-gray-200 dark:border-transparent dark:bg-slate-700 p-4 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors duration-300 ${vc.technicalIssue ? 'ring-2 ring-red-500 bg-red-50 dark:bg-red-900/20' : ''}`}>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-bold text-lg text-gray-900 dark:text-white">{vc.subject}</p>
+                              {vc.technicalIssue && (
+                                <span className="flex items-center gap-1 bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded animate-pulse">
+                                  <AlertIcon /> TECHNICAL ISSUE
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                              Scheduled: {new Date(vc.startTime).toLocaleString()}
+                            </p>
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              <ContactSticker label="Manager" userId={vc.managerId} />
+                              <ContactSticker label="Authority" userId={vc.reportingAuthorityId} />
+                              <ContactSticker label="Conductor" userId={vc.conductorId} />
+                            </div>
+                            <LocationSticker locations={vc.locations} className="mt-2" hideNonPredefined={true} />
+                            
+                            {vc.technicalIssue && (
+                              <div className="my-2 p-2 bg-red-200 dark:bg-red-800/50 rounded text-sm text-red-800 dark:text-red-100 font-bold border border-red-300 dark:border-red-700">
+                                ISSUE: {vc.technicalIssueDescription}
+                              </div>
+                            )}
+
+                            <div className="flex flex-wrap gap-4 mt-2 items-center">
+                              <p className={`text-sm font-semibold ${getStatusColor(vc.status)}`}>{vc.status}</p>
+                              {vc.roomIp && (
+                                <span className="text-xs bg-gray-700 text-gray-200 px-2 py-0.5 rounded font-mono inline-flex items-center gap-1">
+                                  IP: <GlowingIP ip={vc.roomIp} />
+                                </span>
+                              )}
+                              {vc.roomName && <span className="text-xs bg-gray-700 text-gray-200 px-2 py-0.5 rounded">Room: {vc.roomName}</span>}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2 self-start md:self-center">
+                            <Button variant="secondary" onClick={() => setSelectedVc(vc)}>Technical Details</Button>
+                          </div>
                         </div>
+                      )) : unassignedVCs.length === 0 ? (
+                        <p className="text-gray-500 dark:text-gray-400">No managed technical VCs found in the system.</p>
+                      ) : null}
                     </div>
-                    <div className="flex flex-wrap gap-2 self-start md:self-center">
-                        <Button variant="secondary" onClick={() => setSelectedVc(vc)}>Technical Details</Button>
-                    </div>
-                    </div>
-                )) : <p className="text-gray-500 dark:text-gray-400">No managed technical VCs found in the system.</p>}
+                  </div>
                 </div>
             ) : (
                 <CalendarView vcs={allVCs} />
@@ -358,7 +436,7 @@ const RailTelDashboard: React.FC = () => {
                                       {vc.roomName || <span className="text-gray-400 italic">N/A</span>}
                                   </td>
                                   <td className="p-3 font-mono text-gray-700 dark:text-gray-300">
-                                      {vc.roomIp || <span className="text-gray-400 italic">N/A</span>}
+                                      {vc.roomIp ? <GlowingIP ip={vc.roomIp} /> : <span className="text-gray-400 italic">N/A</span>}
                                   </td>
                                   <td className="p-3 text-gray-700 dark:text-gray-300">
                                       {vc.buildingType || <span className="text-gray-400 italic">N/A</span>}

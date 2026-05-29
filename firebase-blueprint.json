@@ -1,0 +1,160 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with operation choices, system roles, and sound alerts configuration.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["Manager", "Reporting Authority", "Conductor", "RailTel"] },
+        "phoneNumber": { "type": "string" },
+        "password": { "type": "string" },
+        "profilePhoto": { "type": "string" },
+        "remindersEnabled": { "type": "boolean" },
+        "reminderMinutes": { "type": "number" },
+        "vcReminderTune": { "type": "string" },
+        "technicalIssueTune": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected"] },
+        "deletionRequested": { "type": "boolean" }
+      },
+      "required": ["id", "name", "role", "phoneNumber", "status"]
+    },
+    "VC": {
+      "title": "VC",
+      "description": "Video Conference meeting schedule data parameters.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "subject": { "type": "string" },
+        "locations": { "type": "array" },
+        "roomIp": { "type": "string" },
+        "roomName": { "type": "string" },
+        "buildingType": { "type": "string", "enum": ["Office Block", "Corporate Block"] },
+        "startTime": { "type": "string" },
+        "actualStartTime": { "type": "string" },
+        "actualEndTime": { "type": "string" },
+        "link": { "type": "string" },
+        "pptLink": { "type": "string" },
+        "managerId": { "type": "string" },
+        "reportingAuthorityId": { "type": "string" },
+        "conductorId": { "type": "string" },
+        "status": { "type": "string", "enum": ["Scheduled", "In Progress", "Completed", "Cancelled", "Postponed"] },
+        "remarks": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "technicalIssue": { "type": "boolean" },
+        "technicalIssueDescription": { "type": "string" },
+        "isWebexMeeting": { "type": "boolean" },
+        "webexId": { "type": "string" },
+        "webexInviteRaw": { "type": "string" }
+      },
+      "required": ["id", "subject", "locations", "startTime", "managerId", "reportingAuthorityId", "status", "createdAt"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Daily attendance clock-in and clock-out details for a Conductor.",
+      "type": "object",
+      "properties": {
+        "conductorId": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string", "enum": ["Present", "On Leave"] },
+        "inTime": { "type": "string" },
+        "outTime": { "type": "string" }
+      },
+      "required": ["conductorId", "date", "status"]
+    },
+    "AttendanceChangeRequest": {
+      "title": "AttendanceChangeRequest",
+      "description": "Correction request for attendance times.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "conductorId": { "type": "string" },
+        "date": { "type": "string" },
+        "requestedInTime": { "type": "string" },
+        "requestedOutTime": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "conductorId", "date", "requestedInTime", "reason", "status", "createdAt"]
+    },
+    "SalaryVoucher": {
+      "title": "SalaryVoucher",
+      "description": "A payment voucher claim for salary disbursements.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "date": { "type": "string" },
+        "voucherType": { "type": "string", "enum": ["CASH", "BANK"] },
+        "paidTo": { "type": "string" },
+        "accountCode": { "type": "string" },
+        "accountNo": { "type": "string" },
+        "bankName": { "type": "string" },
+        "ifscCode": { "type": "string" },
+        "project": { "type": "string" },
+        "advance": { "type": "string" },
+        "amount": { "type": "number" },
+        "amountInWords": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["Draft", "Pending RA Approval", "Pending Manager Approval", "Approved", "Rejected"] },
+        "checkedByRaId": { "type": "string" },
+        "checkedDate": { "type": "string" },
+        "passedByManagerId": { "type": "string" },
+        "passedDate": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "date", "voucherType", "paidTo", "amount", "status", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Secure in-app terminal communication message.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "deliveredTo": { "type": "array" },
+        "readBy": { "type": "array" },
+        "attachment": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["image", "file"] },
+            "url": { "type": "string" },
+            "name": { "type": "string" }
+          }
+        }
+      },
+      "required": ["id", "senderId", "receiverId", "content", "timestamp", "deliveredTo", "readBy"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles database partition."
+    },
+    "/vcs/{vcId}": {
+      "schema": "VC",
+      "description": "Video conference schedule directory."
+    },
+    "/attendance/{attendanceId}": {
+      "schema": "Attendance",
+      "description": "Daily conductor attendance records."
+    },
+    "/attendanceChangeRequests/{requestId}": {
+      "schema": "AttendanceChangeRequest",
+      "description": "Requested corrections directory."
+    },
+    "/salaryVouchers/{voucherId}": {
+      "schema": "SalaryVoucher",
+      "description": "Disbursement and expense ledger entries."
+    },
+    "/messages/{messageId}": {
+      "schema": "Message",
+      "description": "In-app peer-to-peer messages."
+    }
+  }
+}

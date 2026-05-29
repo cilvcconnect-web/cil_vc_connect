@@ -108,7 +108,7 @@ const LoginScreen: React.FC = () => {
                                 onClick={() => setSelectedRole(role)}
                                 className="group flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-cyan-500/50 hover:bg-white/10 transition-all duration-300 text-left"
                             >
-                                <span className="font-semibold text-slate-200 group-hover:text-white">{role}</span>
+                                 <span className="font-semibold text-slate-200 group-hover:text-white">{role}</span>
                                 <div className="w-6 h-6 rounded-full border border-white/20 flex items-center justify-center group-hover:border-cyan-500 transition-colors">
                                     <div className="w-2 h-2 rounded-full bg-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                                 </div>
@@ -210,6 +210,16 @@ const LoginScreen: React.FC = () => {
             </div>
             <div className="w-1 h-1 bg-slate-700 rounded-full"></div>
             <div>SSL v3.0 Enforced</div>
+        </div>
+
+        {/* Copyright Watermark */}
+        <div className="mt-6 pt-4 border-t border-white/5 text-center flex flex-col items-center justify-center gap-1 select-none">
+          <p className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+            © 2026 CIL VC Connect.
+          </p>
+          <p className="text-[10px] font-semibold tracking-wider text-slate-500/80 uppercase">
+            This Application Made By <span className="text-cyan-500 font-extrabold font-mono">Pritam Das</span> | Contact: <span className="font-mono text-cyan-500 font-extrabold">6296361642</span>
+          </p>
         </div>
       </div>
 

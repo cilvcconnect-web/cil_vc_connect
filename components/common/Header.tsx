@@ -44,7 +44,7 @@ const Header: React.FC = () => {
         <header className="sticky top-0 z-50 transition-all duration-500">
           <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border-b border-white/20 dark:border-slate-800/50 shadow-sm"></div>
           <div className="container mx-auto relative px-4 md:px-6 h-20 flex justify-between items-center max-w-7xl">
-            <div className="flex items-center gap-3 cursor-pointer group" onClick={() => navigate('/')}>
+            <div className="flex items-center gap-3 cursor-pointer group" onClick={() => navigate('/dashboard')}>
               <div className="bg-white/50 dark:bg-slate-800/50 p-1.5 rounded-xl border border-white/20 shadow-sm group-hover:scale-105 transition-transform">
                 <Logo className="w-9 h-9" />
               </div>

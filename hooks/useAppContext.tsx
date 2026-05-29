@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo, useEffect } from 'react';
-import { User, VC, UserRole, VCStatus, NewVCData, EmergencyVCData, Attendance, AttendanceStatus, AttendanceChangeRequest, AttendanceChangeRequestStatus, UserStatus, SalaryVoucher, SalaryStatus, Message, MessageAttachment } from '../types';
-import { USERS, INITIAL_VCS, INITIAL_ATTENDANCE, INITIAL_ATTENDANCE_CHANGE_REQUESTS, INITIAL_MESSAGES, GLOBAL_CHAT_ID } from '../constants';
+import { User, VC, UserRole, VCStatus, NewVCData, EmergencyVCData, Attendance, AttendanceStatus, AttendanceChangeRequest, AttendanceChangeRequestStatus, UserStatus, SalaryVoucher, SalaryStatus, Message, MessageAttachment, Roster, RosterRequestStatus } from '../types';
+import { USERS, INITIAL_VCS, INITIAL_ATTENDANCE, INITIAL_ATTENDANCE_CHANGE_REQUESTS, INITIAL_MESSAGES, GLOBAL_CHAT_ID, INITIAL_ROSTERS } from '../constants';
 import { playVcReminderTune } from '../utils/audio';
 
 interface AppContextType {
@@ -43,6 +43,15 @@ interface AppContextType {
   approveAttendanceChange: (requestId: string) => void;
   rejectAttendanceChange: (requestId: string) => void;
   updateAttendanceRecord: (conductorId: string, date: string, inTime: string | undefined, outTime: string | undefined) => void;
+  isAutopilotEnabled: boolean;
+  setAutopilotEnabled: (enabled: boolean) => void;
+  
+  // Roster Methods
+  rosters: Roster[];
+  createRoster: (conductorId: string, date: string, startTime: string, endTime: string) => void;
+  requestRosterChange: (rosterId: string, requestedDate: string, requestedStartTime: string, requestedEndTime: string, reason: string) => void;
+  approveRosterChange: (rosterId: string) => void;
+  rejectRosterChange: (rosterId: string) => void;
   
   // Salary Methods
   submitSalaryVoucher: (voucher: Omit<SalaryVoucher, 'id' | 'status' | 'createdAt'>) => void;
@@ -72,12 +81,92 @@ const getLocalStorage = <T,>(key: string, initialValue: T): T => {
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Initialize state from LocalStorage to persist data across reloads
   const [currentUser, setCurrentUser] = useState<User | null>(() => getLocalStorage('app_currentUser', null));
-  const [users, setUsers] = useState<User[]>(() => getLocalStorage('app_users', USERS));
-  const [vcs, setVcs] = useState<VC[]>(() => getLocalStorage('app_vcs', INITIAL_VCS));
-  const [attendance, setAttendance] = useState<Attendance[]>(() => getLocalStorage('app_attendance', INITIAL_ATTENDANCE));
-  const [attendanceChangeRequests, setAttendanceChangeRequests] = useState<AttendanceChangeRequest[]>(() => getLocalStorage('app_attendanceRequests', INITIAL_ATTENDANCE_CHANGE_REQUESTS));
-  const [salaryVouchers, setSalaryVouchers] = useState<SalaryVoucher[]>(() => getLocalStorage('app_salaryVouchers', []));
-  const [messages, setMessages] = useState<Message[]>(() => getLocalStorage('app_messages', INITIAL_MESSAGES));
+  const [users, setUsers] = useState<User[]>(() => {
+    const loaded = getLocalStorage('app_users', USERS);
+    const seen = new Set<string>();
+    return loaded.filter((u: User) => {
+      if (u && u.id) {
+        if (seen.has(u.id)) return false;
+        seen.add(u.id);
+        return true;
+      }
+      return false;
+    });
+  });
+  const [vcs, setVcs] = useState<VC[]>(() => {
+    const loaded = getLocalStorage('app_vcs', INITIAL_VCS);
+    const seen = new Set<string>();
+    return loaded.filter((vc: VC) => {
+      if (vc && vc.id) {
+        if (seen.has(vc.id)) return false;
+        seen.add(vc.id);
+        return true;
+      }
+      return false;
+    });
+  });
+  const [attendance, setAttendance] = useState<Attendance[]>(() => {
+    const loaded = getLocalStorage('app_attendance', INITIAL_ATTENDANCE);
+    const seen = new Set<string>();
+    return loaded.filter((att: Attendance) => {
+      if (att && att.conductorId && att.date) {
+        const key = `${att.conductorId}-${att.date}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }
+      return false;
+    });
+  });
+  const [attendanceChangeRequests, setAttendanceChangeRequests] = useState<AttendanceChangeRequest[]>(() => {
+    const loaded = getLocalStorage('app_attendanceRequests', INITIAL_ATTENDANCE_CHANGE_REQUESTS);
+    const seen = new Set<string>();
+    return loaded.filter((req: AttendanceChangeRequest) => {
+      if (req && req.id) {
+        if (seen.has(req.id)) return false;
+        seen.add(req.id);
+        return true;
+      }
+      return false;
+    });
+  });
+  const [salaryVouchers, setSalaryVouchers] = useState<SalaryVoucher[]>(() => {
+    const loaded = getLocalStorage('app_salaryVouchers', []);
+    const seen = new Set<string>();
+    return loaded.filter((v: SalaryVoucher) => {
+      if (v && v.id) {
+        if (seen.has(v.id)) return false;
+        seen.add(v.id);
+        return true;
+      }
+      return false;
+    });
+  });
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const loaded = getLocalStorage('app_messages', INITIAL_MESSAGES);
+    const seen = new Set<string>();
+    return loaded.filter((m: Message) => {
+      if (m && m.id) {
+        if (seen.has(m.id)) return false;
+        seen.add(m.id);
+        return true;
+      }
+      return false;
+    });
+  });
+  const [rosters, setRosters] = useState<Roster[]>(() => {
+    const loaded = getLocalStorage('app_rosters', INITIAL_ROSTERS);
+    const seen = new Set<string>();
+    return loaded.filter((r: Roster) => {
+      if (r && r.id) {
+        if (seen.has(r.id)) return false;
+        seen.add(r.id);
+        return true;
+      }
+      return false;
+    });
+  });
+  const [isAutopilotEnabled, setAutopilotEnabled] = useState<boolean>(() => getLocalStorage('app_isAutopilotEnabled', false));
   
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
@@ -98,6 +187,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => { localStorage.setItem('app_attendanceRequests', JSON.stringify(attendanceChangeRequests)); }, [attendanceChangeRequests]);
   useEffect(() => { localStorage.setItem('app_salaryVouchers', JSON.stringify(salaryVouchers)); }, [salaryVouchers]);
   useEffect(() => { localStorage.setItem('app_messages', JSON.stringify(messages)); }, [messages]);
+  useEffect(() => { localStorage.setItem('app_rosters', JSON.stringify(rosters)); }, [rosters]);
+  useEffect(() => { localStorage.setItem('app_isAutopilotEnabled', JSON.stringify(isAutopilotEnabled)); }, [isAutopilotEnabled]);
 
 
   useEffect(() => {
@@ -116,11 +207,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Update online status when logging in/out
   useEffect(() => {
     if (currentUser) {
-        setOnlineUsers(prev => [...new Set([...prev, currentUser.id])]);
+        setOnlineUsers(prev => prev.includes(currentUser.id) ? prev : [...prev, currentUser.id]);
         // Update currentUser state reference if underlying user object changes (e.g. deletionRequested)
         const updatedUser = users.find(u => u.id === currentUser.id);
-        if (updatedUser && JSON.stringify(updatedUser) !== JSON.stringify(currentUser)) {
-            setCurrentUser(updatedUser);
+        if (updatedUser) {
+           const fields: (keyof User) = 'name'; // We will map over exact keys
+           const keysToCompare: (keyof User)[] = [
+             'name', 'phoneNumber', 'role', 'status', 'deletionRequested', 
+             'profilePhoto', 'remindersEnabled', 'reminderMinutes', 
+             'vcReminderTune', 'technicalIssueTune', 'bankAccountNo', 
+             'bankName', 'bankIfscCode', 'pfNumber', 'esicNumber'
+           ];
+           const hasChanges = keysToCompare.some(key => updatedUser[key] !== currentUser[key]);
+           if (hasChanges) {
+             setCurrentUser(updatedUser);
+           }
         }
     }
   }, [currentUser, users]);
@@ -208,6 +309,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       return u;
     }));
+    setCurrentUser(current => {
+      if (current && current.id === userId) {
+        return { ...current, ...data };
+      }
+      return current;
+    });
   }, []);
 
   const getUsersByRole = useCallback((role: UserRole) => {
@@ -480,6 +587,72 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setSalaryVouchers(prev => prev.map(v => v.id === voucherId ? { ...v, status: SalaryStatus.Rejected } : v));
   }, []);
 
+  // --- Roster Logic ---
+  const createRoster = useCallback((conductorId: string, date: string, startTime: string, endTime: string) => {
+    const newRoster: Roster = {
+      id: `roster-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      conductorId,
+      date,
+      startTime,
+      endTime,
+      createdAt: new Date().toISOString(),
+    };
+    setRosters(prev => {
+      const filtered = prev.filter(r => !(r.conductorId === conductorId && r.date === date));
+      return [...filtered, newRoster];
+    });
+    alert('Roster created/updated successfully.');
+  }, []);
+
+  const requestRosterChange = useCallback((rosterId: string, requestedDate: string, requestedStartTime: string, requestedEndTime: string, reason: string) => {
+    setRosters(prev => prev.map(r => {
+      if (r.id === rosterId) {
+        return {
+          ...r,
+          changeRequested: true,
+          requestedDate,
+          requestedStartTime,
+          requestedEndTime,
+          changeReason: reason,
+          changeRequestStatus: RosterRequestStatus.Pending
+        };
+      }
+      return r;
+    }));
+    alert('Roster change request submitted to Reporting Authority.');
+  }, []);
+
+  const approveRosterChange = useCallback((rosterId: string) => {
+    setRosters(prev => prev.map(r => {
+      if (r.id === rosterId && r.changeRequested) {
+        return {
+          ...r,
+          date: r.requestedDate || r.date,
+          startTime: r.requestedStartTime || r.startTime,
+          endTime: r.requestedEndTime || r.endTime,
+          changeRequested: false,
+          changeRequestStatus: RosterRequestStatus.Approved,
+        };
+      }
+      return r;
+    }));
+    alert('Roster change request approved.');
+  }, []);
+
+  const rejectRosterChange = useCallback((rosterId: string) => {
+    setRosters(prev => prev.map(r => {
+      if (r.id === rosterId) {
+        return {
+          ...r,
+          changeRequested: false,
+          changeRequestStatus: RosterRequestStatus.Rejected
+        };
+      }
+      return r;
+    }));
+    alert('Roster change request declined.');
+  }, []);
+
   // --- Messaging Logic ---
 
   const sendMessage = useCallback((receiverId: string, content: string, attachment?: MessageAttachment) => {
@@ -522,79 +695,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         delete newState[currentUser.id];
         return newState;
     });
-
-    // ---------------------------------------------------------
-    // REAL-TIME SIMULATION LOGIC
-    // ---------------------------------------------------------
-    
-    if (receiverId === GLOBAL_CHAT_ID) {
-        // In Global Chat, simulate a random other user replying to keep it alive
-        setTimeout(() => {
-             const potentialResponders = users.filter(u => u.id !== currentUser.id && u.status === UserStatus.Approved);
-             if (potentialResponders.length > 0) {
-                 const randomResponder = potentialResponders[Math.floor(Math.random() * potentialResponders.length)];
-                 const replies = ["Agreed.", "Noted.", "Thanks for the update.", "Will check on this.", "Okay."];
-                 const replyContent = replies[Math.floor(Math.random() * replies.length)];
-                 
-                 const replyMsg: Message = {
-                     id: `msg-global-${Date.now()}`,
-                     senderId: randomResponder.id,
-                     receiverId: GLOBAL_CHAT_ID,
-                     content: replyContent,
-                     timestamp: new Date().toISOString(),
-                     deliveredTo: [randomResponder.id], // Simplified
-                     readBy: [randomResponder.id]
-                 };
-                 setMessages(prev => [...prev, replyMsg]);
-             }
-        }, 4000 + Math.random() * 2000); // Random delay 4-6s
-    } else {
-        // In Direct Messages, simulate the specific user reading, typing, and replying
-        // 1. Simulate "Read" (Blue Ticks)
-        setTimeout(() => {
-            setMessages(prev => prev.map(m => 
-                m.id === newMessage.id 
-                ? { ...m, readBy: [...new Set([...m.readBy, receiverId])], deliveredTo: [...new Set([...m.deliveredTo, receiverId])] } 
-                : m
-            ));
-        }, 1500);
-
-        // 2. Simulate "Typing..."
-        setTimeout(() => {
-             setTypingUsers(prev => ({ ...prev, [receiverId]: currentUser.id }));
-
-             // 3. Simulate Reply Message
-             setTimeout(() => {
-                 // Stop typing
-                 setTypingUsers(prev => {
-                    const newState = { ...prev };
-                    delete newState[receiverId];
-                    return newState;
-                 });
-
-                 // Create Auto Reply
-                 let replyText = `Received: "${content?.substring(0, 15) || (attachment ? 'Attachment' : '')}${content?.length > 15 ? '...' : ''}"`;
-                 
-                 // Encrypt reply if it's DM
-                 let encryptedReply = replyText;
-                 try {
-                    encryptedReply = `ENC::${btoa(unescape(encodeURIComponent(replyText)))}`;
-                 } catch(e){}
-
-                 const replyMsg: Message = {
-                     id: `msg-reply-${Date.now()}`,
-                     senderId: receiverId,
-                     receiverId: currentUser.id,
-                     content: encryptedReply,
-                     timestamp: new Date().toISOString(),
-                     readBy: [receiverId],
-                     deliveredTo: [receiverId, currentUser.id] // Delivered to me
-                 };
-                 setMessages(prev => [...prev, replyMsg]);
-
-             }, 3000); // Typing duration
-        }, 2000); // Delay before typing starts
-    }
 
   }, [currentUser, onlineUsers, users]);
 
@@ -713,13 +813,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     approveAttendanceChange,
     rejectAttendanceChange,
     updateAttendanceRecord,
+    isAutopilotEnabled,
+    setAutopilotEnabled,
     submitSalaryVoucher,
     approveSalaryVoucher,
     rejectSalaryVoucher,
     sendMessage,
     markAsRead,
-    sendTypingSignal
-  }), [currentUser, users, vcs, attendance, theme, salaryVouchers, messages, typingUsers, onlineUsers, toggleTheme, login, logout, signUp, approveUser, rejectUser, deleteUser, requestDeletion, cancelDeletionRequest, updateUserProfile, getUsersByRole, getUserById, scheduleVC, scheduleEmergencyVC, updateVCStatus, updateVCConductor, updateVCLocations, updateVCDetails, reportTechnicalIssue, updateUserReminderSettings, cancelVC, markInTime, markOutTime, markOnLeave, attendanceChangeRequests, requestAttendanceChange, approveAttendanceChange, rejectAttendanceChange, updateAttendanceRecord, submitSalaryVoucher, approveSalaryVoucher, rejectSalaryVoucher, sendMessage, markAsRead, sendTypingSignal]);
+    sendTypingSignal,
+    rosters,
+    createRoster,
+    requestRosterChange,
+    approveRosterChange,
+    rejectRosterChange
+  }), [currentUser, users, vcs, attendance, theme, salaryVouchers, messages, typingUsers, onlineUsers, toggleTheme, login, logout, signUp, approveUser, rejectUser, deleteUser, requestDeletion, cancelDeletionRequest, updateUserProfile, getUsersByRole, getUserById, scheduleVC, scheduleEmergencyVC, updateVCStatus, updateVCConductor, updateVCLocations, updateVCDetails, reportTechnicalIssue, updateUserReminderSettings, cancelVC, markInTime, markOutTime, markOnLeave, attendanceChangeRequests, requestAttendanceChange, approveAttendanceChange, rejectAttendanceChange, updateAttendanceRecord, isAutopilotEnabled, setAutopilotEnabled, submitSalaryVoucher, approveSalaryVoucher, rejectSalaryVoucher, sendMessage, markAsRead, sendTypingSignal, rosters, createRoster, requestRosterChange, approveRosterChange, rejectRosterChange]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };

@@ -1,5 +1,5 @@
 
-import { User, VC, UserRole, VCStatus, Attendance, AttendanceStatus, AttendanceChangeRequest, UserStatus, Message } from './types';
+import { User, VC, UserRole, VCStatus, Attendance, AttendanceStatus, AttendanceChangeRequest, UserStatus, Message, Roster } from './types';
 
 export const USERS: User[] = [
   { id: 'manager-1', name: 'Mr. Sharma', role: UserRole.Manager, phoneNumber: '123-456-7890', password: '123456', remindersEnabled: true, reminderMinutes: 30, status: UserStatus.Approved },
@@ -105,4 +105,23 @@ export const PREDEFINED_ROOMS = [
     { name: '1st Floor OB Meeting Room', ip: '112.133.201.92' },
     { name: '3rd Floor OB Meeting Room', ip: '112.133.201.93' },
     { name: 'DF Chamber', ip: '112.133.201.94' },
+];
+
+export const INITIAL_ROSTERS: Roster[] = [
+  {
+    id: 'roster-1',
+    conductorId: 'conductor-1',
+    date: new Date().toISOString().split('T')[0],
+    startTime: '09:00',
+    endTime: '17:00',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'roster-2',
+    conductorId: 'conductor-2',
+    date: new Date().toISOString().split('T')[0],
+    startTime: '10:00',
+    endTime: '18:00',
+    createdAt: new Date().toISOString(),
+  }
 ];

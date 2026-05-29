@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../hooks/useAppContext';
-import { VC, VCStatus } from '../types';
+import { VC, VCStatus, Roster, RosterRequestStatus } from '../types';
 import Button from './common/Button';
 import Card from './common/Card';
 import VCDetailsModal from './VCDetailsModal';
@@ -80,7 +80,7 @@ const WrenchIcon = () => (
 );
 
 
-type ActiveView = 'vcs' | 'attendance' | 'reports';
+type ActiveView = 'vcs' | 'attendance' | 'reports' | 'roster';
 
 interface OptionStickerProps {
   icon: React.ReactNode;
@@ -104,7 +104,7 @@ const OptionSticker: React.FC<OptionStickerProps> = ({ icon, label, isActive, on
 
 
 const ConductorDashboard: React.FC = () => {
-  const { currentUser, vcs, users, updateVCStatus, cancelVC } = useAppContext();
+  const { currentUser, vcs, users, updateVCStatus, cancelVC, updateVCConductor, rosters, requestRosterChange } = useAppContext();
   const navigate = useNavigate();
   
   const [activeView, setActiveView] = useState<ActiveView>('vcs');
@@ -121,15 +121,27 @@ const ConductorDashboard: React.FC = () => {
   const [isAttendanceReportModalOpen, setIsAttendanceReportModalOpen] = useState(false);
   const [isOldVCListOpen, setIsOldVCListOpen] = useState(false);
 
+  // Roster change request form state
+  const [selectedRosterToChange, setSelectedRosterToChange] = useState<Roster | null>(null);
+  const [requestedChangeDate, setRequestedChangeDate] = useState<string>('');
+  const [requestedChangeStartTime, setRequestedChangeStartTime] = useState<string>('09:00');
+  const [requestedChangeEndTime, setRequestedChangeEndTime] = useState<string>('17:00');
+  const [changeRequestReason, setChangeRequestReason] = useState<string>('');
+
   const conductorVCs = useMemo(() => {
     if (!currentUser) return [];
-    return vcs.filter(vc => vc.conductorId === currentUser.id)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return [...vcs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [currentUser, vcs]);
   
   const activeConductorVCs = useMemo(() => {
     return conductorVCs.filter(vc => vc.status !== VCStatus.Completed && vc.status !== VCStatus.Cancelled);
   }, [conductorVCs]);
+
+  const { unassignedVCs, assignedVCs } = useMemo(() => {
+    const unassigned = activeConductorVCs.filter(vc => !vc.conductorId);
+    const assigned = activeConductorVCs.filter(vc => !!vc.conductorId);
+    return { unassignedVCs: unassigned, assignedVCs: assigned };
+  }, [activeConductorVCs]);
   
   const handleExport = () => {
     const filename = `CIL_VC_Export_Conductor_${currentUser?.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
@@ -146,6 +158,199 @@ const ConductorDashboard: React.FC = () => {
       setVcToComplete(null);
       setRemarks('');
     }
+  };
+
+  const renderConductorRosterPanel = () => {
+    if (!currentUser) return null;
+
+    const myRosters = rosters.filter(r => r.conductorId === currentUser.id);
+
+    const handleOpenChangeRequest = (rost: Roster) => {
+      setSelectedRosterToChange(rost);
+      setRequestedChangeDate(rost.date);
+      setRequestedChangeStartTime(rost.startTime);
+      setRequestedChangeEndTime(rost.endTime);
+      setChangeRequestReason('');
+    };
+
+    const handleFormSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (selectedRosterToChange) {
+        requestRosterChange(
+          selectedRosterToChange.id,
+          requestedChangeDate,
+          requestedChangeStartTime,
+          requestedChangeEndTime,
+          changeRequestReason
+        );
+        setSelectedRosterToChange(null);
+      }
+    };
+
+    return (
+      <div className="space-y-6">
+        <Card>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-black text-slate-900 dark:text-white">
+              My Work Duty Roster
+            </h3>
+            <span className="text-xs bg-slate-100 dark:bg-slate-700 font-bold px-3 py-1 rounded-full text-slate-500 dark:text-slate-300">
+              {myRosters.length} Shifts Assigned
+            </span>
+          </div>
+
+          {myRosters.length === 0 ? (
+            <div className="text-center py-12 border-2 border-dashed border-slate-100 dark:border-white/5 rounded-3xl">
+              <p className="text-slate-400 font-bold text-sm">No duty slots assigned to you by the Reporting Authority.</p>
+              <p className="text-xs text-slate-400 mt-1">Please check back later or contact support.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {myRosters
+                .sort((a, b) => b.date.localeCompare(a.date))
+                .map(rost => (
+                <div
+                  key={rost.id}
+                  className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-3xl border border-slate-100 dark:border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-cyan-500/25 transition-all"
+                >
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-base font-black text-slate-900 dark:text-white">
+                        {new Date(rost.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                      </span>
+                      {rost.changeRequested ? (
+                        <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 text-[10px] font-black uppercase px-2 py-0.5 rounded-full animate-pulse">
+                          Change Awaiting Approval
+                        </span>
+                      ) : rost.changeRequestStatus === RosterRequestStatus.Approved ? (
+                        <span className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+                          Change Approved
+                        </span>
+                      ) : rost.changeRequestStatus === RosterRequestStatus.Rejected ? (
+                        <span className="bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+                          Change Declined
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="flex gap-4 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-400">Scheduled Time slot:</span>
+                        <span className="bg-cyan-100/50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-400 px-2.5 py-0.5 rounded-md font-mono font-bold">
+                          {rost.startTime} - {rost.endTime}
+                        </span>
+                      </div>
+                    </div>
+
+                    {rost.changeRequested && (
+                      <div className="bg-slate-100 dark:bg-slate-800/80 p-3 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 mt-2 space-y-1">
+                        <p className="font-extrabold text-amber-600 dark:text-amber-400">Change requested details:</p>
+                        <p><strong>Proposed Slot:</strong> {rost.requestedDate} ({rost.requestedStartTime} - {rost.requestedEndTime})</p>
+                        {rost.changeReason && <p className="italic mt-1 text-slate-400">" {rost.changeReason} "</p>}
+                      </div>
+                    )}
+                  </div>
+
+                  {!rost.changeRequested && (
+                    <Button
+                      onClick={() => handleOpenChangeRequest(rost)}
+                      variant="secondary"
+                      className="text-xs uppercase font-extrabold tracking-wider w-full md:w-auto"
+                    >
+                      Request Slot Change
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Modal
+          isOpen={!!selectedRosterToChange}
+          onClose={() => setSelectedRosterToChange(null)}
+          title="Request Duty Roster Change"
+        >
+          {selectedRosterToChange && (
+            <form onSubmit={handleFormSubmit} className="space-y-4">
+              <div className="p-3 bg-cyan-100/20 text-cyan-700 dark:text-cyan-400 rounded-2xl text-xs font-semibold leading-relaxed border border-cyan-500/10 mb-4 font-sans">
+                <strong>Current Duty Slot:</strong> {selectedRosterToChange.date} at {selectedRosterToChange.startTime} to {selectedRosterToChange.endTime}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-400 mb-1">
+                  Proposed Date
+                </label>
+                <input
+                  type="date"
+                  value={requestedChangeDate}
+                  onChange={(e) => setRequestedChangeDate(e.target.value)}
+                  className="w-full bg-slate-100 dark:bg-slate-800 border-none text-sm p-3 rounded-2xl text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 font-sans"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1">
+                    Proposed Start
+                  </label>
+                  <input
+                    type="time"
+                    value={requestedChangeStartTime}
+                    onChange={(e) => setRequestedChangeStartTime(e.target.value)}
+                    className="w-full bg-slate-100 dark:bg-slate-800 border-none text-sm p-3 rounded-2xl text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 font-sans"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-400 mb-1">
+                    Proposed End
+                  </label>
+                  <input
+                    type="time"
+                    value={requestedChangeEndTime}
+                    onChange={(e) => setRequestedChangeEndTime(e.target.value)}
+                    className="w-full bg-slate-100 dark:bg-slate-800 border-none text-sm p-3 rounded-2xl text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 font-sans"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-400 mb-1">
+                  Reason for Change Request
+                </label>
+                <textarea
+                  value={changeRequestReason}
+                  onChange={(e) => setChangeRequestReason(e.target.value)}
+                  placeholder="Explain why you are requesting this duty roster adjustment..."
+                  rows={4}
+                  className="w-full bg-slate-100 dark:bg-slate-800 border-none text-sm p-3 rounded-2xl text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 font-sans"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setSelectedRosterToChange(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                >
+                  Submit proposed Change
+                </Button>
+              </div>
+            </form>
+          )}
+        </Modal>
+      </div>
+    );
   };
 
   const handleCancelVC = (vcId: string) => {
@@ -213,84 +418,161 @@ const ConductorDashboard: React.FC = () => {
           isActive={activeView === 'reports'}
           onClick={() => setActiveView('reports')}
         />
+        <OptionSticker
+          icon={<HistoryIcon />}
+          label="Duty Roster"
+          isActive={activeView === 'roster'}
+          onClick={() => setActiveView('roster')}
+        />
       </div>
       
       {activeView === 'vcs' && (
          <Card>
             <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-semibold">Your Assigned VCs</h3>
+                <h3 className="text-xl font-semibold">Video Conferences Directory</h3>
                 <Button onClick={() => setVcViewMode(vcViewMode === 'list' ? 'calendar' : 'list')} variant="secondary">
                   {vcViewMode === 'list' ? <CalendarIcon /> : <ListIcon />}
                   {vcViewMode === 'list' ? 'Calendar View' : 'List View'}
                 </Button>
             </div>
             {vcViewMode === 'list' ? (
-                <div className="space-y-4">
-                {activeConductorVCs.length > 0 ? activeConductorVCs.map(vc => (
-                    <div key={vc.id} className="bg-white border border-gray-200 dark:border-transparent dark:bg-slate-700 p-4 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors duration-300">
-                    <div>
-                        <div className="flex items-center gap-2">
-                             <p className="font-bold text-lg text-gray-900 dark:text-white">{vc.subject}</p>
-                             {vc.technicalIssue && (
-                                 <span className="bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded animate-pulse">
+                <div className="space-y-6">
+                  {/* Unassigned VCs */}
+                  {unassignedVCs.length > 0 && (
+                     <div className="space-y-3">
+                       <div className="flex items-center gap-2 px-2">
+                         <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                         <h4 className="text-xs font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">
+                           Unassigned Conferences ({unassignedVCs.length}) - Open for Self-Assignment
+                         </h4>
+                       </div>
+                       <div className="space-y-4">
+                         {unassignedVCs.map(vc => (
+                           <div key={vc.id} className="bg-amber-50/20 dark:bg-amber-950/10 border border-amber-500/30 dark:border-amber-500/20 p-4 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors duration-300 hover:border-amber-500">
+                             <div>
+                               <div className="flex items-center gap-2">
+                                 <p className="font-bold text-lg text-gray-900 dark:text-white">{vc.subject}</p>
+                                 {vc.technicalIssue && (
+                                   <span className="bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded animate-pulse">
                                      TECHNICAL ISSUE
+                                   </span>
+                                 )}
+                               </div>
+                               <p className="text-sm text-gray-500 dark:text-gray-400">
+                                 Scheduled: {new Date(vc.startTime).toLocaleString()}
+                               </p>
+                               <div className="flex flex-wrap gap-2 mt-2">
+                                 <ContactSticker label="Manager" userId={vc.managerId} />
+                                 <ContactSticker label="Authority" userId={vc.reportingAuthorityId} />
+                                 <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-200/20">
+                                   Conductor: Unassigned
                                  </span>
-                             )}
-                        </div>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Scheduled: {new Date(vc.startTime).toLocaleString()}
-                        </p>
-                        <div className="flex flex-wrap gap-2 mt-2">
-                            <ContactSticker label="Manager" userId={vc.managerId} />
-                            <ContactSticker label="Authority" userId={vc.reportingAuthorityId} />
-                            {(vc.status === VCStatus.Scheduled || vc.status === VCStatus.InProgress) && (
+                                 {(vc.status === VCStatus.Scheduled || vc.status === VCStatus.InProgress) && (
+                                   <PauseSticker onClick={() => setVcToPostpone(vc)} />
+                                 )}
+                               </div>
+                               <LocationSticker locations={vc.locations} className="mt-2" />
+                               <p className="text-sm font-semibold mt-2 text-amber-600 dark:text-amber-400">Awaiting Conductor ({vc.status})</p>
+                             </div>
+                             <div className="flex flex-wrap gap-2 self-start md:self-center">
+                               <Button variant="secondary" onClick={() => setSelectedVc(vc)}>Details</Button>
+                               
+                               {(vc.status === VCStatus.Scheduled || vc.status === VCStatus.InProgress) && (
+                                 <Button variant="secondary" onClick={() => setVcToEditLocations(vc)}>Edit Locations</Button>
+                               )}
+
+                               {vc.status === VCStatus.Scheduled && currentUser && (
+                                 <Button variant="success" onClick={() => updateVCConductor(vc.id, currentUser.id)} className="bg-amber-500 hover:bg-amber-600 text-white border-none shadow-lg shadow-amber-500/25">
+                                   Self-Assign VC
+                                 </Button>
+                               )}
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                     </div>
+                  )}
+
+                  {/* Assigned Conferences */}
+                  <div className="space-y-3">
+                    {unassignedVCs.length > 0 && assignedVCs.length > 0 && (
+                       <div className="flex items-center gap-2 px-2 pt-2">
+                         <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                           Assigned Conferences ({assignedVCs.length})
+                         </h4>
+                       </div>
+                    )}
+                    <div className="space-y-4">
+                      {assignedVCs.length > 0 ? assignedVCs.map(vc => (
+                        <div key={vc.id} className="bg-white border border-gray-200 dark:border-transparent dark:bg-slate-700 p-4 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors duration-300">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-bold text-lg text-gray-900 dark:text-white">{vc.subject}</p>
+                              {vc.technicalIssue && (
+                                <span className="bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded animate-pulse">
+                                  TECHNICAL ISSUE
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                              Scheduled: {new Date(vc.startTime).toLocaleString()}
+                            </p>
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              <ContactSticker label="Manager" userId={vc.managerId} />
+                              <ContactSticker label="Authority" userId={vc.reportingAuthorityId} />
+                              <ContactSticker label="Conductor" userId={vc.conductorId} />
+                              {(vc.status === VCStatus.Scheduled || vc.status === VCStatus.InProgress) && (
                                 <PauseSticker onClick={() => setVcToPostpone(vc)} />
-                            )}
-                        </div>
-                        <LocationSticker locations={vc.locations} className="mt-2" />
-                        <p className={`text-sm font-semibold mt-2 ${getStatusColor(vc.status)}`}>{vc.status}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2 self-start md:self-center">
-                        <Button variant="secondary" onClick={() => setSelectedVc(vc)}>Details</Button>
-                        
-                        {(vc.status === VCStatus.Scheduled || vc.status === VCStatus.InProgress) && (
-                            <>
+                              )}
+                            </div>
+                            <LocationSticker locations={vc.locations} className="mt-2" />
+                            <p className={`text-sm font-semibold mt-2 ${getStatusColor(vc.status)}`}>{vc.status}</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2 self-start md:self-center">
+                            <Button variant="secondary" onClick={() => setSelectedVc(vc)}>Details</Button>
+                            
+                            {(vc.status === VCStatus.Scheduled || vc.status === VCStatus.InProgress) && (
+                              <>
                                 <Button variant="secondary" onClick={() => setVcToEditLocations(vc)}>Edit Locations</Button>
                                 {/* Technical Help Sticker/Button */}
                                 <button
-                                    onClick={() => setVcToReport(vc)}
-                                    className={`flex items-center gap-1 px-3 py-2 rounded-lg font-bold text-sm transition-colors ${
-                                        vc.technicalIssue 
-                                        ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg ring-2 ring-green-400' 
-                                        : 'bg-orange-600 hover:bg-orange-700 text-white'
-                                    }`}
+                                  onClick={() => setVcToReport(vc)}
+                                  className={`flex items-center gap-1 px-3 py-2 rounded-lg font-bold text-sm transition-colors ${
+                                    vc.technicalIssue 
+                                    ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg ring-2 ring-green-400' 
+                                    : 'bg-orange-600 hover:bg-orange-700 text-white'
+                                  }`}
                                 >
-                                    {vc.technicalIssue ? (
-                                        <>
-                                            <WrenchIcon /> Resolve Issue
-                                        </>
-                                    ) : (
-                                        <>
-                                            <AlertIcon /> Technical Help
-                                        </>
-                                    )}
+                                  {vc.technicalIssue ? (
+                                    <>
+                                      <WrenchIcon /> Resolve Issue
+                                    </>
+                                  ) : (
+                                    <>
+                                      <AlertIcon /> Technical Help
+                                    </>
+                                  )}
                                 </button>
-                            </>
-                        )}
-                        
-                        {vc.status === VCStatus.Scheduled && (
-                            <>
+                              </>
+                            )}
+                            
+                            {vc.status === VCStatus.Scheduled && vc.conductorId === currentUser?.id && (
+                              <>
                                 <Button variant="success" onClick={() => handleStartVC(vc.id)}>Start VC</Button>
                                 <Button variant="secondary" className="bg-purple-600 hover:bg-purple-700 text-white" onClick={() => setVcToPostpone(vc)}>Postpone</Button>
                                 <Button variant="danger" onClick={() => handleCancelVC(vc.id)}>Cancel</Button>
-                            </>
-                        )}
-                        {vc.status === VCStatus.InProgress && (
-                        <Button variant="primary" onClick={() => setVcToComplete(vc)}>Complete VC</Button>
-                        )}
+                              </>
+                            )}
+                            {vc.status === VCStatus.InProgress && vc.conductorId === currentUser?.id && (
+                              <Button variant="primary" onClick={() => setVcToComplete(vc)}>Complete VC</Button>
+                            )}
+                          </div>
+                        </div>
+                      )) : unassignedVCs.length === 0 ? (
+                        <p className="text-gray-500 dark:text-gray-400">You have no upcoming VCs.</p>
+                      ) : null}
                     </div>
-                    </div>
-                )) : <p className="text-gray-500 dark:text-gray-400">You have no upcoming VCs.</p>}
+                  </div>
                 </div>
             ) : (
                 <CalendarView vcs={activeConductorVCs} />
@@ -321,6 +603,8 @@ const ConductorDashboard: React.FC = () => {
             </Card>
         </div>
       )}
+
+      {activeView === 'roster' && renderConductorRosterPanel()}
      
       <VCDetailsModal vc={selectedVc} onClose={() => setSelectedVc(null)} />
       <EditVCLocationsModal vc={vcToEditLocations} onClose={() => setVcToEditLocations(null)} />

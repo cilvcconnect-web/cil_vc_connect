@@ -65,13 +65,18 @@ const ManagerDashboard: React.FC = () => {
 
   const managerVCs = useMemo(() => {
     if (!currentUser) return [];
-    return vcs.filter(vc => vc.managerId === currentUser.id)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return [...vcs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [currentUser, vcs]);
   
   const activeManagerVCs = useMemo(() => {
       return managerVCs.filter(vc => vc.status !== VCStatus.Completed && vc.status !== VCStatus.Cancelled);
   }, [managerVCs]);
+
+  const { unassignedVCs, assignedVCs } = useMemo(() => {
+    const unassigned = activeManagerVCs.filter(vc => !vc.conductorId);
+    const assigned = activeManagerVCs.filter(vc => !!vc.conductorId);
+    return { unassignedVCs: unassigned, assignedVCs: assigned };
+  }, [activeManagerVCs]);
 
   const stats = useMemo(() => ({
       total: managerVCs.length,
@@ -176,46 +181,109 @@ const ManagerDashboard: React.FC = () => {
         </div>
 
         {viewMode === 'list' ? (
-            <div className="grid grid-cols-1 gap-4">
-            {activeManagerVCs.length > 0 ? activeManagerVCs.map(vc => (
-                <div key={vc.id} className="group bg-white dark:bg-slate-900/60 p-5 rounded-[2.5rem] border border-slate-100 dark:border-white/5 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 hover:border-cyan-500/30 transition-all duration-500 shadow-sm hover:shadow-xl hover:shadow-cyan-500/5">
-                    <div className="flex-1 space-y-4 min-w-0">
-                        <div className="flex items-center gap-3">
-                             <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${getStatusColor(vc.status)}`}>
-                                {vc.status}
-                             </span>
-                             <span className="text-slate-300 dark:text-slate-700">|</span>
-                             <p className="text-xs font-bold text-slate-400 uppercase tracking-tighter">
-                                {new Date(vc.startTime).toLocaleDateString()} at {new Date(vc.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                             </p>
+            <div className="space-y-6">
+              {/* Unassigned VCs */}
+              {unassignedVCs.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 px-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                    <h4 className="text-xs font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">
+                      Unassigned Conferences ({unassignedVCs.length})
+                    </h4>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4">
+                    {unassignedVCs.map(vc => (
+                      <div key={vc.id} className="group bg-amber-50/20 dark:bg-amber-950/10 p-5 rounded-[2.5rem] border border-amber-500/30 dark:border-amber-500/20 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 hover:border-amber-500 transition-all duration-500 shadow-sm hover:shadow-xl hover:shadow-amber-500/5">
+                        <div className="flex-1 space-y-4 min-w-0">
+                            <div className="flex items-center gap-3">
+                                 <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                                    Needs Assignment
+                                 </span>
+                                 <span className="text-slate-300 dark:text-slate-700">|</span>
+                                 <p className="text-xs font-bold text-slate-400 uppercase tracking-tighter">
+                                    {new Date(vc.startTime).toLocaleDateString()} at {new Date(vc.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                 </p>
+                            </div>
+                            <h4 className="text-2xl font-black text-slate-900 dark:text-white truncate">{vc.subject}</h4>
+                            
+                            <div className="flex flex-wrap items-center gap-3">
+                                <ContactSticker label="Authority" userId={vc.reportingAuthorityId} />
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-200/20">
+                                  Conductor: Unassigned
+                                </span>
+                                <LocationSticker locations={vc.locations} />
+                                {(vc.status === VCStatus.Scheduled || vc.status === VCStatus.InProgress) && (
+                                    <PauseSticker onClick={() => setVcToPostpone(vc)} className="!rounded-xl" />
+                                )}
+                            </div>
                         </div>
-                        <h4 className="text-2xl font-black text-slate-900 dark:text-white truncate">{vc.subject}</h4>
                         
-                        <div className="flex flex-wrap items-center gap-3">
-                            <ContactSticker label="Authority" userId={vc.reportingAuthorityId} />
-                            <ContactSticker label="Conductor" userId={vc.conductorId} />
-                            <LocationSticker locations={vc.locations} />
-                            {(vc.status === VCStatus.Scheduled || vc.status === VCStatus.InProgress) && (
-                                <PauseSticker onClick={() => setVcToPostpone(vc)} className="!rounded-xl" />
+                        <div className="flex flex-wrap gap-2 lg:bg-amber-500/5 lg:p-2 lg:rounded-3xl border-transparent">
+                            <Button variant="secondary" onClick={() => setSelectedVc(vc)} className="!rounded-2xl !text-xs font-black uppercase">Details</Button>
+                            {vc.status === VCStatus.Scheduled && (
+                            <>
+                                <Button variant="secondary" onClick={() => setVcToEdit(vc)} className="!rounded-2xl !text-xs font-black uppercase bg-amber-500 hover:bg-amber-600 border-none text-white shadow-lg shadow-amber-500/25">Assign</Button>
+                                <Button variant="danger" onClick={() => handleCancelVC(vc.id)} className="!rounded-2xl !text-xs font-black uppercase">Abort</Button>
+                            </>
+                            )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Assigned Active VCs */}
+              <div className="space-y-3">
+                {unassignedVCs.length > 0 && assignedVCs.length > 0 && (
+                  <div className="flex items-center gap-2 px-2 pt-2">
+                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                      Assigned Conferences ({assignedVCs.length})
+                    </h4>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 gap-4">
+                {assignedVCs.length > 0 ? assignedVCs.map(vc => (
+                    <div key={vc.id} className="group bg-white dark:bg-slate-900/60 p-5 rounded-[2.5rem] border border-slate-100 dark:border-white/5 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 hover:border-cyan-500/30 transition-all duration-500 shadow-sm hover:shadow-xl hover:shadow-cyan-500/5">
+                        <div className="flex-1 space-y-4 min-w-0">
+                            <div className="flex items-center gap-3">
+                                 <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${getStatusColor(vc.status)}`}>
+                                    {vc.status}
+                                 </span>
+                                 <span className="text-slate-300 dark:text-slate-700">|</span>
+                                 <p className="text-xs font-bold text-slate-400 uppercase tracking-tighter">
+                                    {new Date(vc.startTime).toLocaleDateString()} at {new Date(vc.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                 </p>
+                            </div>
+                            <h4 className="text-2xl font-black text-slate-900 dark:text-white truncate">{vc.subject}</h4>
+                            
+                            <div className="flex flex-wrap items-center gap-3">
+                                <ContactSticker label="Authority" userId={vc.reportingAuthorityId} />
+                                <ContactSticker label="Conductor" userId={vc.conductorId} />
+                                <LocationSticker locations={vc.locations} />
+                                {(vc.status === VCStatus.Scheduled || vc.status === VCStatus.InProgress) && (
+                                    <PauseSticker onClick={() => setVcToPostpone(vc)} className="!rounded-xl" />
+                                )}
+                            </div>
+                        </div>
+                        
+                        <div className="flex flex-wrap gap-2 lg:bg-slate-50 dark:lg:bg-slate-800/40 lg:p-2 lg:rounded-3xl border-slate-100 dark:border-slate-800">
+                            <Button variant="secondary" onClick={() => setSelectedVc(vc)} className="!rounded-2xl !text-xs font-black uppercase">Details</Button>
+                            {vc.status === VCStatus.Scheduled && (
+                            <>
+                                <Button variant="secondary" onClick={() => setVcToEdit(vc)} className="!rounded-2xl !text-xs font-black uppercase">Assign</Button>
+                                <Button variant="danger" onClick={() => handleCancelVC(vc.id)} className="!rounded-2xl !text-xs font-black uppercase">Abort</Button>
+                            </>
                             )}
                         </div>
                     </div>
-                    
-                    <div className="flex flex-wrap gap-2 lg:bg-slate-50 dark:lg:bg-slate-800/40 lg:p-2 lg:rounded-3xl border-slate-100 dark:border-slate-800">
-                        <Button variant="secondary" onClick={() => setSelectedVc(vc)} className="!rounded-2xl !text-xs font-black uppercase">Details</Button>
-                        {vc.status === VCStatus.Scheduled && (
-                        <>
-                            <Button variant="secondary" onClick={() => setVcToEdit(vc)} className="!rounded-2xl !text-xs font-black uppercase">Assign</Button>
-                            <Button variant="danger" onClick={() => handleCancelVC(vc.id)} className="!rounded-2xl !text-xs font-black uppercase">Abort</Button>
-                        </>
-                        )}
+                )) : unassignedVCs.length === 0 ? (
+                    <div className="bg-slate-100/50 dark:bg-slate-800/20 rounded-[3rem] p-20 text-center border-2 border-dashed border-slate-200 dark:border-slate-800">
+                        <p className="text-slate-400 font-bold uppercase tracking-widest">No active bridge connections detected</p>
                     </div>
+                ) : null}
                 </div>
-            )) : (
-                <div className="bg-slate-100/50 dark:bg-slate-800/20 rounded-[3rem] p-20 text-center border-2 border-dashed border-slate-200 dark:border-slate-800">
-                    <p className="text-slate-400 font-bold uppercase tracking-widest">No active bridge connections detected</p>
-                </div>
-            )}
+              </div>
             </div>
         ) : (
             <CalendarView vcs={managerVCs} />
@@ -224,8 +292,6 @@ const ManagerDashboard: React.FC = () => {
 
       {/* Quick Footer Actions */}
       <div className="flex flex-wrap justify-center gap-4 pt-8 opacity-60 hover:opacity-100 transition-opacity">
-          <button onClick={() => navigate('/salary')} className="text-xs font-black uppercase tracking-widest text-slate-500 hover:text-cyan-500 transition-colors">Salary Portal</button>
-          <span className="text-slate-300 dark:text-slate-800">•</span>
           <button onClick={() => setIsOldVCListOpen(true)} className="text-xs font-black uppercase tracking-widest text-slate-500 hover:text-cyan-500 transition-colors">Bridge History</button>
           <span className="text-slate-300 dark:text-slate-800">•</span>
           <button onClick={() => setIsExportModalOpen(true)} className="text-xs font-black uppercase tracking-widest text-slate-500 hover:text-cyan-500 transition-colors">Data Export</button>
