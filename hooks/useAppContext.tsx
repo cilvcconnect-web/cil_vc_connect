@@ -4,6 +4,9 @@ import { User, VC, UserRole, VCStatus, NewVCData, EmergencyVCData, Attendance, A
 import { USERS, INITIAL_VCS, INITIAL_ATTENDANCE, INITIAL_ATTENDANCE_CHANGE_REQUESTS, INITIAL_MESSAGES, GLOBAL_CHAT_ID, INITIAL_ROSTERS } from '../constants';
 import { playVcReminderTune } from '../utils/audio';
 
+import { db, handleFirestoreError, OperationType } from '../services/firebase';
+import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+
 interface AppContextType {
   currentUser: User | null;
   users: User[];
@@ -79,93 +82,15 @@ const getLocalStorage = <T,>(key: string, initialValue: T): T => {
 };
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Initialize state from LocalStorage to persist data across reloads
+  // Initialize state from LocalStorage to persist data across reloads (only essential UI setups)
   const [currentUser, setCurrentUser] = useState<User | null>(() => getLocalStorage('app_currentUser', null));
-  const [users, setUsers] = useState<User[]>(() => {
-    const loaded = getLocalStorage('app_users', USERS);
-    const seen = new Set<string>();
-    return loaded.filter((u: User) => {
-      if (u && u.id) {
-        if (seen.has(u.id)) return false;
-        seen.add(u.id);
-        return true;
-      }
-      return false;
-    });
-  });
-  const [vcs, setVcs] = useState<VC[]>(() => {
-    const loaded = getLocalStorage('app_vcs', INITIAL_VCS);
-    const seen = new Set<string>();
-    return loaded.filter((vc: VC) => {
-      if (vc && vc.id) {
-        if (seen.has(vc.id)) return false;
-        seen.add(vc.id);
-        return true;
-      }
-      return false;
-    });
-  });
-  const [attendance, setAttendance] = useState<Attendance[]>(() => {
-    const loaded = getLocalStorage('app_attendance', INITIAL_ATTENDANCE);
-    const seen = new Set<string>();
-    return loaded.filter((att: Attendance) => {
-      if (att && att.conductorId && att.date) {
-        const key = `${att.conductorId}-${att.date}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      }
-      return false;
-    });
-  });
-  const [attendanceChangeRequests, setAttendanceChangeRequests] = useState<AttendanceChangeRequest[]>(() => {
-    const loaded = getLocalStorage('app_attendanceRequests', INITIAL_ATTENDANCE_CHANGE_REQUESTS);
-    const seen = new Set<string>();
-    return loaded.filter((req: AttendanceChangeRequest) => {
-      if (req && req.id) {
-        if (seen.has(req.id)) return false;
-        seen.add(req.id);
-        return true;
-      }
-      return false;
-    });
-  });
-  const [salaryVouchers, setSalaryVouchers] = useState<SalaryVoucher[]>(() => {
-    const loaded = getLocalStorage('app_salaryVouchers', []);
-    const seen = new Set<string>();
-    return loaded.filter((v: SalaryVoucher) => {
-      if (v && v.id) {
-        if (seen.has(v.id)) return false;
-        seen.add(v.id);
-        return true;
-      }
-      return false;
-    });
-  });
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const loaded = getLocalStorage('app_messages', INITIAL_MESSAGES);
-    const seen = new Set<string>();
-    return loaded.filter((m: Message) => {
-      if (m && m.id) {
-        if (seen.has(m.id)) return false;
-        seen.add(m.id);
-        return true;
-      }
-      return false;
-    });
-  });
-  const [rosters, setRosters] = useState<Roster[]>(() => {
-    const loaded = getLocalStorage('app_rosters', INITIAL_ROSTERS);
-    const seen = new Set<string>();
-    return loaded.filter((r: Roster) => {
-      if (r && r.id) {
-        if (seen.has(r.id)) return false;
-        seen.add(r.id);
-        return true;
-      }
-      return false;
-    });
-  });
+  const [users, setUsers] = useState<User[]>([]);
+  const [vcs, setVcs] = useState<VC[]>([]);
+  const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [attendanceChangeRequests, setAttendanceChangeRequests] = useState<AttendanceChangeRequest[]>([]);
+  const [salaryVouchers, setSalaryVouchers] = useState<SalaryVoucher[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [rosters, setRosters] = useState<Roster[]>([]);
   const [isAutopilotEnabled, setAutopilotEnabled] = useState<boolean>(() => getLocalStorage('app_isAutopilotEnabled', false));
   
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
@@ -179,17 +104,166 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return 'dark';
   });
 
+  // =========================================================================
+  // --- REAL-TIME FIRESTORE SUBSCRIPTIONS ---
+  // =========================================================================
+
+  // Users
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
+      if (snapshot.empty) {
+        USERS.forEach(async (u) => {
+          try {
+            await setDoc(doc(db, 'users', u.id), u);
+          } catch (e) {
+            console.error('Failed seeding user', e);
+          }
+        });
+      } else {
+        const fetched: User[] = [];
+        snapshot.forEach((d) => {
+          fetched.push(d.data() as User);
+        });
+        setUsers(fetched);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'users');
+    });
+    return unsubscribe;
+  }, []);
+
+  // VCs
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'vcs'), (snapshot) => {
+      if (snapshot.empty) {
+        INITIAL_VCS.forEach(async (vc) => {
+          try {
+            await setDoc(doc(db, 'vcs', vc.id), vc);
+          } catch (e) {
+            console.error('Failed seeding VC', e);
+          }
+        });
+      } else {
+        const fetched: VC[] = [];
+        snapshot.forEach((d) => {
+          fetched.push(d.data() as VC);
+        });
+        fetched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setVcs(fetched);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'vcs');
+    });
+    return unsubscribe;
+  }, []);
+
+  // Attendance
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'attendance'), (snapshot) => {
+      if (snapshot.empty) {
+        INITIAL_ATTENDANCE.forEach(async (att) => {
+          try {
+            const compositeId = `${att.conductorId}-${att.date}`;
+            await setDoc(doc(db, 'attendance', compositeId), att);
+          } catch (e) {
+            console.error('Failed seeding attendance', e);
+          }
+        });
+      } else {
+        const fetched: Attendance[] = [];
+        snapshot.forEach((d) => {
+          fetched.push(d.data() as Attendance);
+        });
+        setAttendance(fetched);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'attendance');
+    });
+    return unsubscribe;
+  }, []);
+
+  // Attendance Change Requests
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'attendanceChangeRequests'), (snapshot) => {
+      const fetched: AttendanceChangeRequest[] = [];
+      snapshot.forEach((d) => {
+        fetched.push(d.data() as AttendanceChangeRequest);
+      });
+      fetched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setAttendanceChangeRequests(fetched);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'attendanceChangeRequests');
+    });
+    return unsubscribe;
+  }, []);
+
+  // Salary Vouchers
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'salaryVouchers'), (snapshot) => {
+      const fetched: SalaryVoucher[] = [];
+      snapshot.forEach((d) => {
+        fetched.push(d.data() as SalaryVoucher);
+      });
+      fetched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setSalaryVouchers(fetched);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'salaryVouchers');
+    });
+    return unsubscribe;
+  }, []);
+
+  // Messages
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'messages'), (snapshot) => {
+      if (snapshot.empty) {
+        INITIAL_MESSAGES.forEach(async (msg) => {
+          try {
+            await setDoc(doc(db, 'messages', msg.id), msg);
+          } catch (e) {
+            console.error('Failed seeding message', e);
+          }
+        });
+      } else {
+        const fetched: Message[] = [];
+        snapshot.forEach((d) => {
+          fetched.push(d.data() as Message);
+        });
+        fetched.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        setMessages(fetched);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'messages');
+    });
+    return unsubscribe;
+  }, []);
+
+  // Rosters
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'rosters'), (snapshot) => {
+      if (snapshot.empty) {
+        INITIAL_ROSTERS.forEach(async (r) => {
+          try {
+            await setDoc(doc(db, 'rosters', r.id), r);
+          } catch (e) {
+            console.error('Failed seeding roster', e);
+          }
+        });
+      } else {
+        const fetched: Roster[] = [];
+        snapshot.forEach((d) => {
+          fetched.push(d.data() as Roster);
+        });
+        setRosters(fetched);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'rosters');
+    });
+    return unsubscribe;
+  }, []);
+
   // --- Persistence Effects ---
   useEffect(() => { localStorage.setItem('app_currentUser', JSON.stringify(currentUser)); }, [currentUser]);
-  useEffect(() => { localStorage.setItem('app_users', JSON.stringify(users)); }, [users]);
-  useEffect(() => { localStorage.setItem('app_vcs', JSON.stringify(vcs)); }, [vcs]);
-  useEffect(() => { localStorage.setItem('app_attendance', JSON.stringify(attendance)); }, [attendance]);
-  useEffect(() => { localStorage.setItem('app_attendanceRequests', JSON.stringify(attendanceChangeRequests)); }, [attendanceChangeRequests]);
-  useEffect(() => { localStorage.setItem('app_salaryVouchers', JSON.stringify(salaryVouchers)); }, [salaryVouchers]);
-  useEffect(() => { localStorage.setItem('app_messages', JSON.stringify(messages)); }, [messages]);
-  useEffect(() => { localStorage.setItem('app_rosters', JSON.stringify(rosters)); }, [rosters]);
   useEffect(() => { localStorage.setItem('app_isAutopilotEnabled', JSON.stringify(isAutopilotEnabled)); }, [isAutopilotEnabled]);
-
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -198,20 +272,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  // Mock Online Status logic: When app loads, pick random users to be "online"
+  // Mock Online Status logic: When users populate, pick random users to be "online"
   useEffect(() => {
-    const randomOnlineUsers = users.filter(() => Math.random() > 0.4).map(u => u.id);
-    setOnlineUsers(randomOnlineUsers);
-  }, []);
+    if (users.length > 0 && onlineUsers.length === 0) {
+      const randomOnlineUsers = users.filter(() => Math.random() > 0.4).map(u => u.id);
+      setOnlineUsers(randomOnlineUsers);
+    }
+  }, [users, onlineUsers]);
 
   // Update online status when logging in/out
   useEffect(() => {
     if (currentUser) {
         setOnlineUsers(prev => prev.includes(currentUser.id) ? prev : [...prev, currentUser.id]);
-        // Update currentUser state reference if underlying user object changes (e.g. deletionRequested)
         const updatedUser = users.find(u => u.id === currentUser.id);
         if (updatedUser) {
-           const fields: (keyof User) = 'name'; // We will map over exact keys
            const keysToCompare: (keyof User)[] = [
              'name', 'phoneNumber', 'role', 'status', 'deletionRequested', 
              'profilePhoto', 'remindersEnabled', 'reminderMinutes', 
@@ -256,7 +330,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCurrentUser(null);
   }, []);
 
-  const signUp = useCallback((name: string, phoneNumber: string, role: UserRole, password?: string) => {
+  const signUp = useCallback(async (name: string, phoneNumber: string, role: UserRole, password?: string) => {
     if (role === UserRole.ReportingAuthority) {
         // Enforce single Reporting Authority rule
         const existingRA = users.find(u => u.role === UserRole.ReportingAuthority && u.status !== UserStatus.Rejected);
@@ -266,8 +340,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
     }
 
+    const userId = `user-${Date.now()}`;
     const newUser: User = {
-      id: `user-${Date.now()}`,
+      id: userId,
       name,
       phoneNumber,
       role,
@@ -276,45 +351,67 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       reminderMinutes: 30,
       status: UserStatus.Pending, // New users are Pending by default
     };
-    setUsers(prevUsers => [...prevUsers, newUser]);
+    try {
+      await setDoc(doc(db, 'users', userId), newUser);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, `users/${userId}`);
+    }
   }, [users]);
 
-  const approveUser = useCallback((userId: string) => {
-    setUsers(prevUsers => prevUsers.map(u => u.id === userId ? { ...u, status: UserStatus.Approved } : u));
-    alert("User has been approved and can now log in.");
+  const approveUser = useCallback(async (userId: string) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), { status: UserStatus.Approved });
+      alert("User has been approved and can now log in.");
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${userId}`);
+    }
   }, []);
 
-  const rejectUser = useCallback((userId: string) => {
-    setUsers(prevUsers => prevUsers.map(u => u.id === userId ? { ...u, status: UserStatus.Rejected } : u));
-    alert("User registration has been rejected.");
+  const rejectUser = useCallback(async (userId: string) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), { status: UserStatus.Rejected });
+      alert("User registration has been rejected.");
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${userId}`);
+    }
   }, []);
 
-  const deleteUser = useCallback((userId: string) => {
-    setUsers(prevUsers => prevUsers.filter(u => u.id !== userId));
+  const deleteUser = useCallback(async (userId: string) => {
+    try {
+      await deleteDoc(doc(db, 'users', userId));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `users/${userId}`);
+    }
   }, []);
 
-  const requestDeletion = useCallback((userId: string) => {
-    setUsers(prevUsers => prevUsers.map(u => u.id === userId ? { ...u, deletionRequested: true } : u));
+  const requestDeletion = useCallback(async (userId: string) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), { deletionRequested: true });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${userId}`);
+    }
   }, []);
 
-  const cancelDeletionRequest = useCallback((userId: string) => {
-    setUsers(prevUsers => prevUsers.map(u => u.id === userId ? { ...u, deletionRequested: false } : u));
+  const cancelDeletionRequest = useCallback(async (userId: string) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), { deletionRequested: false });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${userId}`);
+    }
   }, []);
 
-  const updateUserProfile = useCallback((userId: string, data: Partial<User>) => {
-    setUsers(prevUsers => prevUsers.map(u => {
-      if (u.id === userId) {
-        const updatedUser = { ...u, ...data };
-        return updatedUser;
-      }
-      return u;
-    }));
-    setCurrentUser(current => {
-      if (current && current.id === userId) {
-        return { ...current, ...data };
-      }
-      return current;
-    });
+  const updateUserProfile = useCallback(async (userId: string, data: Partial<User>) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), data);
+      setCurrentUser(current => {
+        if (current && current.id === userId) {
+          return { ...current, ...data };
+        }
+        return current;
+      });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${userId}`);
+    }
   }, []);
 
   const getUsersByRole = useCallback((role: UserRole) => {
@@ -326,19 +423,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return users.find(user => user.id === userId);
   }, [users]);
 
-  const scheduleVC = useCallback((vcData: Omit<NewVCData, 'managerId' | 'conductorId'> & { managerId: string, conductorId?: string }) => {
+  const scheduleVC = useCallback(async (vcData: Omit<NewVCData, 'managerId' | 'conductorId'> & { managerId: string, conductorId?: string }) => {
+    const vcId = `vc-${Date.now()}`;
     const newVC: VC = {
       ...vcData,
-      id: `vc-${Date.now()}`,
+      id: vcId,
       status: VCStatus.Scheduled,
       createdAt: new Date().toISOString(),
     };
-    setVcs(prevVcs => [...prevVcs, newVC].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+    try {
+      await setDoc(doc(db, 'vcs', vcId), newVC);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, `vcs/${vcId}`);
+    }
   }, []);
 
-  const scheduleEmergencyVC = useCallback((vcData: Partial<EmergencyVCData>) => {
+  const scheduleEmergencyVC = useCallback(async (vcData: Partial<EmergencyVCData>) => {
+    const vcId = `vc-emergency-${Date.now()}`;
     const newVC: VC = {
-      id: `vc-emergency-${Date.now()}`,
+      id: vcId,
       status: VCStatus.Scheduled,
       createdAt: new Date().toISOString(),
       subject: `[EMERGENCY] ${vcData.subject || 'Emergency Meeting'}`,
@@ -351,73 +454,89 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       link: vcData.link,
       pptLink: vcData.pptLink,
     };
-    setVcs(prevVcs => [...prevVcs, newVC].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-  }, []);
-
-  const updateVCStatus = useCallback((vcId: string, status: VCStatus, remarks?: string, newStartTime?: string) => {
-    setVcs(prevVcs => prevVcs.map(vc => {
-      if (vc.id === vcId) {
-        const updatedVC = { ...vc, status };
-        if (status === VCStatus.InProgress) {
-          updatedVC.actualStartTime = new Date().toISOString();
-        }
-        if (status === VCStatus.Completed) {
-          updatedVC.actualEndTime = new Date().toISOString();
-          if (remarks) {
-            updatedVC.remarks = remarks;
-          }
-        }
-        if (status === VCStatus.Postponed && newStartTime) {
-            updatedVC.startTime = newStartTime;
-            if (remarks) {
-                updatedVC.remarks = remarks;
-            }
-        }
-        return updatedVC;
-      }
-      return vc;
-    }));
-  }, []);
-  
-  const updateVCConductor = useCallback((vcId: string, conductorId: string) => {
-    setVcs(prevVcs => prevVcs.map(vc => vc.id === vcId ? { ...vc, conductorId } : vc));
-  }, []);
-
-  const updateVCLocations = useCallback((vcId: string, locations: string[]) => {
-    setVcs(prevVcs => prevVcs.map(vc => vc.id === vcId ? { ...vc, locations } : vc));
-  }, []);
-
-  const updateVCDetails = useCallback((vcId: string, updates: Partial<VC>) => {
-    setVcs(prevVcs => prevVcs.map(vc => vc.id === vcId ? { ...vc, ...updates } : vc));
-  }, []);
-
-  const reportTechnicalIssue = useCallback((vcId: string, description: string | null) => {
-    setVcs(prevVcs => prevVcs.map(vc => {
-        if (vc.id === vcId) {
-            return {
-                ...vc,
-                technicalIssue: !!description,
-                technicalIssueDescription: description || undefined
-            };
-        }
-        return vc;
-    }));
-  }, []);
-
-  const updateUserReminderSettings = useCallback((userId: string, settings: { remindersEnabled: boolean; reminderMinutes: number; vcReminderTune?: string; technicalIssueTune?: string }) => {
-    const updateUser = (user: User | null) => {
-      if (!user) return null;
-      return { ...user, ...settings };
+    try {
+      await setDoc(doc(db, 'vcs', vcId), newVC);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, `vcs/${vcId}`);
     }
-
-    setUsers(prevUsers => prevUsers.map(u => u.id === userId ? updateUser(u)! : u));
   }, []);
 
-  const cancelVC = useCallback((vcId: string) => {
-     setVcs(prevVcs => prevVcs.map(vc => vc.id === vcId ? { ...vc, status: VCStatus.Cancelled } : vc));
+  const updateVCStatus = useCallback(async (vcId: string, status: VCStatus, remarks?: string, newStartTime?: string) => {
+    const updates: Partial<VC> = { status };
+    if (status === VCStatus.InProgress) {
+      updates.actualStartTime = new Date().toISOString();
+    }
+    if (status === VCStatus.Completed) {
+      updates.actualEndTime = new Date().toISOString();
+      if (remarks) {
+        updates.remarks = remarks;
+      }
+    }
+    if (status === VCStatus.Postponed && newStartTime) {
+      updates.startTime = newStartTime;
+      if (remarks) {
+        updates.remarks = remarks;
+      }
+    }
+    try {
+      await updateDoc(doc(db, 'vcs', vcId), updates);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `vcs/${vcId}`);
+    }
   }, []);
   
-  const markInTime = useCallback((conductorId: string) => {
+  const updateVCConductor = useCallback(async (vcId: string, conductorId: string) => {
+    try {
+      await updateDoc(doc(db, 'vcs', vcId), { conductorId });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `vcs/${vcId}`);
+    }
+  }, []);
+
+  const updateVCLocations = useCallback(async (vcId: string, locations: string[]) => {
+    try {
+      await updateDoc(doc(db, 'vcs', vcId), { locations });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `vcs/${vcId}`);
+    }
+  }, []);
+
+  const updateVCDetails = useCallback(async (vcId: string, updates: Partial<VC>) => {
+    try {
+      await updateDoc(doc(db, 'vcs', vcId), updates);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `vcs/${vcId}`);
+    }
+  }, []);
+
+  const reportTechnicalIssue = useCallback(async (vcId: string, description: string | null) => {
+    try {
+      await updateDoc(doc(db, 'vcs', vcId), {
+        technicalIssue: !!description,
+        technicalIssueDescription: description || undefined
+      });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `vcs/${vcId}`);
+    }
+  }, []);
+
+  const updateUserReminderSettings = useCallback(async (userId: string, settings: { remindersEnabled: boolean; reminderMinutes: number; vcReminderTune?: string; technicalIssueTune?: string }) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), settings);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${userId}`);
+    }
+  }, []);
+
+  const cancelVC = useCallback(async (vcId: string) => {
+    try {
+      await updateDoc(doc(db, 'vcs', vcId), { status: VCStatus.Cancelled });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `vcs/${vcId}`);
+    }
+  }, []);
+  
+  const markInTime = useCallback(async (conductorId: string) => {
     const today = new Date().toISOString().split('T')[0];
     const alreadyMarked = attendance.some(a => a.conductorId === conductorId && a.date === today);
 
@@ -426,30 +545,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
 
+    const compositeId = `${conductorId}-${today}`;
     const newRecord: Attendance = {
       conductorId,
       date: today,
       status: AttendanceStatus.Present,
       inTime: new Date().toISOString(),
     };
-    setAttendance(prev => [...prev, newRecord]);
+    try {
+      await setDoc(doc(db, 'attendance', compositeId), newRecord);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, `attendance/${compositeId}`);
+    }
   }, [attendance]);
 
-  const markOutTime = useCallback((conductorId: string) => {
+  const markOutTime = useCallback(async (conductorId: string) => {
     const today = new Date().toISOString().split('T')[0];
-    setAttendance(prev => prev.map(a => {
-        if (a.conductorId === conductorId && a.date === today && a.status === AttendanceStatus.Present) {
-            if (a.outTime) {
-                alert("Out time has already been marked.");
-                return a;
-            }
-            return { ...a, outTime: new Date().toISOString() };
-        }
-        return a;
-    }));
-  }, []);
+    const record = attendance.find(a => a.conductorId === conductorId && a.date === today && a.status === AttendanceStatus.Present);
+    if (!record) return;
 
-  const markOnLeave = useCallback((conductorId: string) => {
+    if (record.outTime) {
+      alert("Out time has already been marked.");
+      return;
+    }
+
+    const compositeId = `${conductorId}-${today}`;
+    try {
+      await updateDoc(doc(db, 'attendance', compositeId), { outTime: new Date().toISOString() });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `attendance/${compositeId}`);
+    }
+  }, [attendance]);
+
+  const markOnLeave = useCallback(async (conductorId: string) => {
     const today = new Date().toISOString().split('T')[0];
     const alreadyMarked = attendance.some(a => a.conductorId === conductorId && a.date === today);
 
@@ -458,80 +586,91 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
 
+    const compositeId = `${conductorId}-${today}`;
     const newRecord: Attendance = {
       conductorId,
       date: today,
       status: AttendanceStatus.OnLeave,
     };
-    setAttendance(prev => [...prev, newRecord]);
+    try {
+      await setDoc(doc(db, 'attendance', compositeId), newRecord);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, `attendance/${compositeId}`);
+    }
   }, [attendance]);
 
-  const requestAttendanceChange = useCallback((data: Omit<AttendanceChangeRequest, 'id' | 'status' | 'createdAt'>) => {
+  const requestAttendanceChange = useCallback(async (data: Omit<AttendanceChangeRequest, 'id' | 'status' | 'createdAt'>) => {
+    const requestId = `att-req-${Date.now()}`;
     const newRequest: AttendanceChangeRequest = {
       ...data,
-      id: `att-req-${Date.now()}`,
+      id: requestId,
       status: AttendanceChangeRequestStatus.Pending,
       createdAt: new Date().toISOString(),
     };
-    setAttendanceChangeRequests(prev => [...prev, newRequest].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-    alert('Your attendance change request has been submitted.');
+    try {
+      await setDoc(doc(db, 'attendanceChangeRequests', requestId), newRequest);
+      alert('Your attendance change request has been submitted.');
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, `attendanceChangeRequests/${requestId}`);
+    }
   }, []);
 
-  const approveAttendanceChange = useCallback((requestId: string) => {
+  const approveAttendanceChange = useCallback(async (requestId: string) => {
     const request = attendanceChangeRequests.find(r => r.id === requestId);
     if (!request) return;
 
-    setAttendance(prev => {
-      const existingRecordIndex = prev.findIndex(a => a.conductorId === request.conductorId && a.date === request.date);
-      if (existingRecordIndex > -1) {
-        return prev.map((att, index) => index === existingRecordIndex ? { ...att, status: AttendanceStatus.Present, inTime: request.requestedInTime, outTime: request.requestedOutTime || undefined } : att);
-      } else {
-        const newRecord: Attendance = {
-          conductorId: request.conductorId,
-          date: request.date,
-          status: AttendanceStatus.Present,
-          inTime: request.requestedInTime,
-          outTime: request.requestedOutTime || undefined,
-        };
-        return [...prev, newRecord];
-      }
-    });
+    const compositeId = `${request.conductorId}-${request.date}`;
+    const newRecord: Attendance = {
+      conductorId: request.conductorId,
+      date: request.date,
+      status: AttendanceStatus.Present,
+      inTime: request.requestedInTime,
+      outTime: request.requestedOutTime || undefined,
+    };
 
-    setAttendanceChangeRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: AttendanceChangeRequestStatus.Approved } : r));
+    try {
+      await setDoc(doc(db, 'attendance', compositeId), newRecord);
+      await updateDoc(doc(db, 'attendanceChangeRequests', requestId), { status: AttendanceChangeRequestStatus.Approved });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, `attendanceChangeRequests/${requestId}`);
+    }
   }, [attendanceChangeRequests]);
 
-  const rejectAttendanceChange = useCallback((requestId: string) => {
-    setAttendanceChangeRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: AttendanceChangeRequestStatus.Rejected } : r));
+  const rejectAttendanceChange = useCallback(async (requestId: string) => {
+    try {
+      await updateDoc(doc(db, 'attendanceChangeRequests', requestId), { status: AttendanceChangeRequestStatus.Rejected });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `attendanceChangeRequests/${requestId}`);
+    }
   }, []);
 
-  const updateAttendanceRecord = useCallback((conductorId: string, date: string, inTime: string | undefined, outTime: string | undefined) => {
-    setAttendance(prev => {
-      const existingRecordIndex = prev.findIndex(a => a.conductorId === conductorId && a.date === date);
-      
-      if (existingRecordIndex === -1 && !inTime) {
-          alert("Cannot create a record without an In-Time.");
-          return prev;
-      }
+  const updateAttendanceRecord = useCallback(async (conductorId: string, date: string, inTime: string | undefined, outTime: string | undefined) => {
+    const compositeId = `${conductorId}-${date}`;
+    
+    if (!inTime) {
+      alert("Cannot create a record without an In-Time.");
+      return;
+    }
 
-      if (existingRecordIndex > -1) {
-        return prev.map((att, index) => index === existingRecordIndex ? { ...att, status: AttendanceStatus.Present, inTime, outTime } : att);
-      } else {
-        const newRecord: Attendance = {
-          conductorId,
-          date,
-          status: AttendanceStatus.Present,
-          inTime,
-          outTime,
-        };
-        return [...prev, newRecord];
-      }
-    });
-    alert('Attendance record updated.');
+    const newRecord: Attendance = {
+      conductorId,
+      date,
+      status: AttendanceStatus.Present,
+      inTime,
+      outTime: outTime || undefined,
+    };
+
+    try {
+      await setDoc(doc(db, 'attendance', compositeId), newRecord);
+      alert('Attendance record updated.');
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, `attendance/${compositeId}`);
+    }
   }, []);
 
   // --- Salary Logic ---
   
-  const submitSalaryVoucher = useCallback((data: Omit<SalaryVoucher, 'id' | 'status' | 'createdAt'>) => {
+  const submitSalaryVoucher = useCallback(async (data: Omit<SalaryVoucher, 'id' | 'status' | 'createdAt'>) => {
     let initialStatus = SalaryStatus.PendingManager;
     // If creator is Conductor or RailTel, needs RA approval first
     if (currentUser?.role === UserRole.Conductor || currentUser?.role === UserRole.RailTel) {
@@ -542,9 +681,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         initialStatus = SalaryStatus.Approved;
     }
 
+    const voucherId = `voucher-${Date.now()}`;
     const newVoucher: SalaryVoucher = {
       ...data,
-      id: `voucher-${Date.now()}`,
+      id: voucherId,
       status: initialStatus,
       createdAt: new Date().toISOString(),
       ...(initialStatus === SalaryStatus.Approved && currentUser ? { 
@@ -553,117 +693,120 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } : {})
     };
 
-    setSalaryVouchers(prev => [newVoucher, ...prev]);
-    alert('Voucher submitted successfully.');
+    try {
+      await setDoc(doc(db, 'salaryVouchers', voucherId), newVoucher);
+      alert('Voucher submitted successfully.');
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, `salaryVouchers/${voucherId}`);
+    }
   }, [currentUser]);
 
-  const approveSalaryVoucher = useCallback((voucherId: string) => {
+  const approveSalaryVoucher = useCallback(async (voucherId: string) => {
     if (!currentUser) return;
+    const voucher = salaryVouchers.find(v => v.id === voucherId);
+    if (!voucher) return;
 
-    setSalaryVouchers(prev => prev.map(voucher => {
-        if (voucher.id === voucherId) {
-            if (currentUser.role === UserRole.ReportingAuthority && voucher.status === SalaryStatus.PendingRA) {
-                return { 
-                    ...voucher, 
-                    status: SalaryStatus.PendingManager, 
-                    checkedByRaId: currentUser.id,
-                    checkedDate: new Date().toISOString()
-                };
-            }
-            if (currentUser.role === UserRole.Manager && voucher.status === SalaryStatus.PendingManager) {
-                return { 
-                    ...voucher, 
-                    status: SalaryStatus.Approved,
-                    passedByManagerId: currentUser.id,
-                    passedDate: new Date().toISOString()
-                };
-            }
-        }
-        return voucher;
-    }));
-  }, [currentUser]);
+    const updates: Partial<SalaryVoucher> = {};
+    if (currentUser.role === UserRole.ReportingAuthority && voucher.status === SalaryStatus.PendingRA) {
+      updates.status = SalaryStatus.PendingManager;
+      updates.checkedByRaId = currentUser.id;
+      updates.checkedDate = new Date().toISOString();
+    } else if (currentUser.role === UserRole.Manager && voucher.status === SalaryStatus.PendingManager) {
+      updates.status = SalaryStatus.Approved;
+      updates.passedByManagerId = currentUser.id;
+      updates.passedDate = new Date().toISOString();
+    } else {
+      return;
+    }
 
-  const rejectSalaryVoucher = useCallback((voucherId: string) => {
-    setSalaryVouchers(prev => prev.map(v => v.id === voucherId ? { ...v, status: SalaryStatus.Rejected } : v));
+    try {
+      await updateDoc(doc(db, 'salaryVouchers', voucherId), updates);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `salaryVouchers/${voucherId}`);
+    }
+  }, [currentUser, salaryVouchers]);
+
+  const rejectSalaryVoucher = useCallback(async (voucherId: string) => {
+    try {
+      await updateDoc(doc(db, 'salaryVouchers', voucherId), { status: SalaryStatus.Rejected });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `salaryVouchers/${voucherId}`);
+    }
   }, []);
 
   // --- Roster Logic ---
-  const createRoster = useCallback((conductorId: string, date: string, startTime: string, endTime: string) => {
+  const createRoster = useCallback(async (conductorId: string, date: string, startTime: string, endTime: string) => {
+    const rosterId = `roster-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const newRoster: Roster = {
-      id: `roster-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: rosterId,
       conductorId,
       date,
       startTime,
       endTime,
       createdAt: new Date().toISOString(),
     };
-    setRosters(prev => {
-      const filtered = prev.filter(r => !(r.conductorId === conductorId && r.date === date));
-      return [...filtered, newRoster];
-    });
-    alert('Roster created/updated successfully.');
+    try {
+      await setDoc(doc(db, 'rosters', rosterId), newRoster);
+      alert('Roster created/updated successfully.');
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, `rosters/${rosterId}`);
+    }
   }, []);
 
-  const requestRosterChange = useCallback((rosterId: string, requestedDate: string, requestedStartTime: string, requestedEndTime: string, reason: string) => {
-    setRosters(prev => prev.map(r => {
-      if (r.id === rosterId) {
-        return {
-          ...r,
-          changeRequested: true,
-          requestedDate,
-          requestedStartTime,
-          requestedEndTime,
-          changeReason: reason,
-          changeRequestStatus: RosterRequestStatus.Pending
-        };
-      }
-      return r;
-    }));
-    alert('Roster change request submitted to Reporting Authority.');
+  const requestRosterChange = useCallback(async (rosterId: string, requestedDate: string, requestedStartTime: string, requestedEndTime: string, reason: string) => {
+    try {
+      await updateDoc(doc(db, 'rosters', rosterId), {
+        changeRequested: true,
+        requestedDate,
+        requestedStartTime,
+        requestedEndTime,
+        changeReason: reason,
+        changeRequestStatus: RosterRequestStatus.Pending
+      });
+      alert('Roster change request submitted to Reporting Authority.');
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `rosters/${rosterId}`);
+    }
   }, []);
 
-  const approveRosterChange = useCallback((rosterId: string) => {
-    setRosters(prev => prev.map(r => {
-      if (r.id === rosterId && r.changeRequested) {
-        return {
-          ...r,
-          date: r.requestedDate || r.date,
-          startTime: r.requestedStartTime || r.startTime,
-          endTime: r.requestedEndTime || r.endTime,
-          changeRequested: false,
-          changeRequestStatus: RosterRequestStatus.Approved,
-        };
-      }
-      return r;
-    }));
-    alert('Roster change request approved.');
-  }, []);
+  const approveRosterChange = useCallback(async (rosterId: string) => {
+    const roster = rosters.find(r => r.id === rosterId);
+    if (!roster) return;
 
-  const rejectRosterChange = useCallback((rosterId: string) => {
-    setRosters(prev => prev.map(r => {
-      if (r.id === rosterId) {
-        return {
-          ...r,
-          changeRequested: false,
-          changeRequestStatus: RosterRequestStatus.Rejected
-        };
-      }
-      return r;
-    }));
-    alert('Roster change request declined.');
+    try {
+      await updateDoc(doc(db, 'rosters', rosterId), {
+        date: roster.requestedDate || roster.date,
+        startTime: roster.requestedStartTime || roster.startTime,
+        endTime: roster.requestedEndTime || roster.endTime,
+        changeRequested: false,
+        changeRequestStatus: RosterRequestStatus.Approved,
+      });
+      alert('Roster change request approved.');
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `rosters/${rosterId}`);
+    }
+  }, [rosters]);
+
+  const rejectRosterChange = useCallback(async (rosterId: string) => {
+    try {
+      await updateDoc(doc(db, 'rosters', rosterId), {
+        changeRequested: false,
+        changeRequestStatus: RosterRequestStatus.Rejected
+      });
+      alert('Roster change request declined.');
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `rosters/${rosterId}`);
+    }
   }, []);
 
   // --- Messaging Logic ---
 
-  const sendMessage = useCallback((receiverId: string, content: string, attachment?: MessageAttachment) => {
+  const sendMessage = useCallback(async (receiverId: string, content: string, attachment?: MessageAttachment) => {
     if (!currentUser) return;
 
-    // Simulate End-to-End Encryption for Direct Messages (Text Content Only)
-    // We use a base64 encoding with proper unicode support to simulate encrypted storage.
     let processedContent = content;
     
     if (receiverId !== GLOBAL_CHAT_ID && content) {
-        // Simple mock encryption for text
         try {
             processedContent = `ENC::${btoa(unescape(encodeURIComponent(content)))}`;
         } catch (e) {
@@ -671,14 +814,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
     }
     
-    // Check if recipient is online for "Delivered" status (Simulated)
-    // In Global Chat, we just assume delivered to server.
-    // In DM, if user is in onlineUsers, it's delivered.
     const isReceiverOnline = onlineUsers.includes(receiverId);
     const initialDeliveredTo = isReceiverOnline ? [receiverId] : [];
 
+    const msgId = `msg-${Date.now()}`;
     const newMessage: Message = {
-        id: `msg-${Date.now()}`,
+        id: msgId,
         senderId: currentUser.id,
         receiverId,
         content: processedContent,
@@ -687,7 +828,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         deliveredTo: initialDeliveredTo,
         attachment: attachment
     };
-    setMessages(prev => [...prev, newMessage]);
+
+    try {
+      await setDoc(doc(db, 'messages', msgId), newMessage);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, `messages/${msgId}`);
+    }
     
     // Clear typing status when message is sent
     setTypingUsers(prev => {
@@ -696,30 +842,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return newState;
     });
 
-  }, [currentUser, onlineUsers, users]);
+  }, [currentUser, onlineUsers]);
 
-  const markAsRead = useCallback((chatId: string) => {
+  const markAsRead = useCallback(async (chatId: string) => {
     if (!currentUser) return;
     
-    setMessages(prev => prev.map(msg => {
-      // For Global Chat: If message is in GLOBAL chat and I haven't read it
+    messages.forEach(async (msg) => {
       const isGlobalMsg = chatId === GLOBAL_CHAT_ID && msg.receiverId === GLOBAL_CHAT_ID;
-      
-      // For DM: If message is FROM contact (chatId) TO me and I haven't read it
       const isDmFromContact = msg.senderId === chatId && msg.receiverId === currentUser.id;
       
       if ((isGlobalMsg || isDmFromContact) && !msg.readBy.includes(currentUser.id)) {
-        // Logic: If I read it, it implies it was delivered to me too.
         const newReadBy = [...msg.readBy, currentUser.id];
         const newDeliveredTo = msg.deliveredTo.includes(currentUser.id) 
             ? msg.deliveredTo 
             : [...msg.deliveredTo, currentUser.id];
 
-        return { ...msg, readBy: newReadBy, deliveredTo: newDeliveredTo };
+        try {
+          await updateDoc(doc(db, 'messages', msg.id), {
+            readBy: newReadBy,
+            deliveredTo: newDeliveredTo
+          });
+        } catch (e) {
+          handleFirestoreError(e, OperationType.UPDATE, `messages/${msg.id}`);
+        }
       }
-      return msg;
-    }));
-  }, [currentUser]);
+    });
+  }, [currentUser, messages]);
 
   const sendTypingSignal = useCallback((receiverId: string, isTyping: boolean) => {
     if (!currentUser) return;

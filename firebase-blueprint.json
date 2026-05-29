@@ -129,6 +129,26 @@
         }
       },
       "required": ["id", "senderId", "receiverId", "content", "timestamp", "deliveredTo", "readBy"]
+    },
+    "Roster": {
+      "title": "Roster",
+      "description": "Duty roster scheduled shift assignment details for a Conductor.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "conductorId": { "type": "string" },
+        "date": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "changeRequested": { "type": "boolean" },
+        "requestedDate": { "type": "string" },
+        "requestedStartTime": { "type": "string" },
+        "requestedEndTime": { "type": "string" },
+        "changeReason": { "type": "string" },
+        "changeRequestStatus": { "type": "string", "enum": ["Pending", "Approved", "Rejected"] }
+      },
+      "required": ["id", "conductorId", "date", "startTime", "endTime", "createdAt"]
     }
   },
   "firestore": {
@@ -155,6 +175,10 @@
     "/messages/{messageId}": {
       "schema": "Message",
       "description": "In-app peer-to-peer messages."
+    },
+    "/rosters/{rosterId}": {
+      "schema": "Roster",
+      "description": "Conductor shift assignment records."
     }
   }
 }

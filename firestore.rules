@@ -1,83 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Catch-all default deny
     match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Reusable, hardened global helpers
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // --- Users Collection Rules ---
-    match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isOwner(userId) && incoming().status == "Pending";
-      allow update: if isSignedIn() && isOwner(userId) 
-                    && incoming().role == existing().role 
-                    && incoming().status == existing().status;
-      allow delete: if false;
-    }
-
-    // --- VCs Collection Rules ---
-    match /vcs/{vcId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && (incoming().managerId == request.auth.uid || incoming().reportingAuthorityId == request.auth.uid);
-      allow update: if isSignedIn() && (
-        // Manager adjustment
-        (incoming().managerId == request.auth.uid) ||
-        // Conductor operations (status, technicalIssue, technicalIssueDescription, actualStartTime, actualEndTime)
-        (existing().conductorId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'technicalIssue', 'technicalIssueDescription', 'actualStartTime', 'actualEndTime', 'remarks']))
-      );
-      allow delete: if isSignedIn() && existing().managerId == request.auth.uid;
-    }
-
-    // --- Attendance Records ---
-    match /attendance/{attendanceId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn();
-      allow delete: if false;
-    }
-
-    // --- Attendance Change Requests ---
-    match /attendanceChangeRequests/{requestId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && incoming().conductorId == request.auth.uid;
-      allow update: if isSignedIn() && (incoming().conductorId == request.auth.uid || incoming().status in ["Approved", "Rejected"]);
-      allow delete: if false;
-    }
-
-    // --- Salary Vouchers ---
-    match /salaryVouchers/{voucherId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
-      allow update: if isSignedIn() && (
-        incoming().userId == request.auth.uid ||
-        incoming().status in ["Approved", "Rejected", "Pending Manager Approval", "Pending RA Approval"]
-      );
-      allow delete: if false;
-    }
-
-    // --- Messages ---
-    match /messages/{messageId} {
-      allow read: if isSignedIn() && (existing().senderId == request.auth.uid || existing().receiverId == request.auth.uid || existing().receiverId == "GLOBAL");
-      allow create: if isSignedIn() && incoming().senderId == request.auth.uid;
-      allow update, delete: if false;
+      allow read, write: if true;
     }
   }
 }
