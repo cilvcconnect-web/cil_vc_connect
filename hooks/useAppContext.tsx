@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo, useEffect, useRef } from 'react';
 import { User, VC, UserRole, VCStatus, NewVCData, EmergencyVCData, Attendance, AttendanceStatus, AttendanceChangeRequest, AttendanceChangeRequestStatus, UserStatus, SalaryVoucher, SalaryStatus, Message, MessageAttachment, Roster, RosterRequestStatus } from '../types';
 import { USERS, INITIAL_VCS, INITIAL_ATTENDANCE, INITIAL_ATTENDANCE_CHANGE_REQUESTS, INITIAL_MESSAGES, GLOBAL_CHAT_ID, INITIAL_ROSTERS } from '../constants';
 import { playVcReminderTune } from '../utils/audio';
@@ -95,6 +95,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
+  const markedMessagesRef = useRef<Set<string>>(new Set());
   
   // Theme state
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -441,18 +442,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const scheduleEmergencyVC = useCallback(async (vcData: Partial<EmergencyVCData>) => {
     const vcId = `vc-emergency-${Date.now()}`;
     const newVC: VC = {
+      ...vcData,
       id: vcId,
       status: VCStatus.Scheduled,
       createdAt: new Date().toISOString(),
       subject: `[EMERGENCY] ${vcData.subject || 'Emergency Meeting'}`,
       locations: vcData.locations && vcData.locations.length > 0 ? vcData.locations : ['TBD'],
-      roomIp: vcData.roomIp,
+      roomIp: vcData.roomIp || '',
       startTime: vcData.startTime || new Date().toISOString(),
       managerId: vcData.managerId || '',
       reportingAuthorityId: vcData.reportingAuthorityId || '',
       conductorId: vcData.conductorId || undefined,
-      link: vcData.link,
-      pptLink: vcData.pptLink,
+      link: vcData.link || '',
+      pptLink: vcData.pptLink || '',
     };
     try {
       await setDoc(doc(db, 'vcs', vcId), newVC);
@@ -852,6 +854,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const isDmFromContact = msg.senderId === chatId && msg.receiverId === currentUser.id;
       
       if ((isGlobalMsg || isDmFromContact) && !msg.readBy.includes(currentUser.id)) {
+        const cacheKey = `${msg.id}-${currentUser.id}`;
+        if (markedMessagesRef.current.has(cacheKey)) {
+          return;
+        }
+        markedMessagesRef.current.add(cacheKey);
+
         const newReadBy = [...msg.readBy, currentUser.id];
         const newDeliveredTo = msg.deliveredTo.includes(currentUser.id) 
             ? msg.deliveredTo 
@@ -864,6 +872,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           });
         } catch (e) {
           handleFirestoreError(e, OperationType.UPDATE, `messages/${msg.id}`);
+          markedMessagesRef.current.delete(cacheKey);
         }
       }
     });
